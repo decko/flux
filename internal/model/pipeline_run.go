@@ -9,7 +9,7 @@ const (
 	RunStatusRunning   RunStatus = "running"
 	RunStatusCompleted RunStatus = "completed"
 	RunStatusFailed    RunStatus = "failed"
-	RunStatusCancelled RunStatus = "canceled"
+	RunStatusCanceled  RunStatus = "canceled"
 )
 
 type PipelineRun struct {

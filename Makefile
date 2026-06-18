@@ -4,7 +4,8 @@ BINARY=flux
 GOFLAGS=-trimpath
 LDFLAGS=-s -w
 
-build: frontend backend
+build: backend
+	@if [ -f web/package.json ]; then $(MAKE) frontend; fi
 
 backend:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/flux
