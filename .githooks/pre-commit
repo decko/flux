@@ -4,6 +4,9 @@
 
 set -e
 
+# Ensure go binaries are on PATH
+export PATH="/home/decko/go/bin:$PATH"
+
 echo "==> Running gofmt..."
 unformatted=$(gofmt -l .)
 if [ -n "$unformatted" ]; then
