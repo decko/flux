@@ -1,0 +1,14 @@
+bin/
+*.db
+*.sqlite
+.env
+.env.*
+!.env.example
+
+web/dist/
+web/node_modules/
+
+.worktrees/
+
+*.log
+.DS_Store

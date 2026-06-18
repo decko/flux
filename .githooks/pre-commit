@@ -1,0 +1,30 @@
+#!/bin/bash
+# Flux pre-commit hook
+# Runs gofmt, golangci-lint, and tests before allowing commit.
+
+set -e
+
+echo "==> Running gofmt..."
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+    echo "ERROR: Unformatted Go files found:"
+    echo "$unformatted"
+    echo "Run 'gofmt -s -w .' to fix."
+    exit 1
+fi
+
+echo "==> Running golangci-lint..."
+golangci-lint run
+
+echo "==> Running tests..."
+go test -race -short ./...
+
+# Frontend checks (if web/ has changes)
+if git diff --cached --name-only | grep -q "^web/"; then
+    echo "==> Running frontend typecheck..."
+    cd web && npm run typecheck
+    echo "==> Running frontend lint..."
+    npm run lint
+fi
+
+echo "==> All checks passed."

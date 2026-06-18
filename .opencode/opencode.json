@@ -1,0 +1,99 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [],
+  "lsp": {
+    "go": {
+      "command": ["gopls"],
+      "extensions": ["go"]
+    }
+  },
+  "agent": {
+    "flux-expert": {
+      "model": "deepseek/deepseek-v4-pro",
+      "permission": {
+        "lsp": "allow",
+        "edit": "ask",
+        "write": "ask"
+      }
+    },
+    "feature-intake": {
+      "model": "opencode-go/qwen3.7-max",
+      "mode": "subagent",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "go-coder": {
+      "model": "deepseek/deepseek-v4-flash",
+      "variant": "max",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "go-reviewer": {
+      "model": "opencode-go/qwen3.7-max",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "go-reviewer2": {
+      "model": "opencode-go/kimi-k2.7",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "go-tester": {
+      "model": "deepseek/deepseek-v4-flash",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "go-scout": {
+      "model": "deepseek/deepseek-v4-flash",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "go-architect": {
+      "model": "opencode-go/kimi-k2.6",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "frontend-coder": {
+      "model": "deepseek/deepseek-v4-flash",
+      "variant": "max",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "frontend-reviewer": {
+      "model": "opencode-go/qwen3.7-max",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "frontend-reviewer2": {
+      "model": "opencode-go/kimi-k2.7",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "reviewer-router": {
+      "model": "deepseek/deepseek-v4-pro",
+      "variant": "high",
+      "mode": "subagent",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "senior-qe": {
+      "model": "deepseek/deepseek-v4-pro",
+      "variant": "high",
+      "mode": "subagent",
+      "permission": {
+        "lsp": "allow"
+      }
+    }
+  }
+}
