@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/decko/flux/internal/model"
 )
@@ -12,14 +13,49 @@ import (
 // SQLiteProjectRepository implements ProjectRepository using a SQLite database.
 // JSON-serializable fields (Definition, Adapters, Pipelines) are stored as
 // TEXT columns and marshaled/unmarshaled on reads and writes.
+//
+// Transactions are not used for single-statement CRUD operations.
+// If multi-statement atomicity is needed in the future, transactional
+// wrappers (e.g., CreateBatch) will be added to the ProjectRepository
+// interface with a separate issue.
 type SQLiteProjectRepository struct {
 	db *sql.DB
 }
 
 // NewSQLiteProjectRepository creates a new SQLiteProjectRepository backed by
-// the given *sql.DB connection.
+// the given *sql.DB connection. It configures SQLite-specific connection pool
+// settings: single writer (SQLite serializes writes), WAL mode for concurrent
+// reads, and no idle connection timeout.
 func NewSQLiteProjectRepository(db *sql.DB) *SQLiteProjectRepository {
+	// SQLite serializes writes, so limit to one open connection for safety.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 	return &SQLiteProjectRepository{db: db}
+}
+
+// Migrate runs the database migration for the projects table and enables
+// WAL journal mode for improved read concurrency under web server loads.
+func (r *SQLiteProjectRepository) Migrate(ctx context.Context) error {
+	if _, err := r.db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
+		return fmt.Errorf("enabling WAL mode: %w", err)
+	}
+
+	query := `CREATE TABLE IF NOT EXISTS projects (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		repo_url TEXT NOT NULL,
+		definition TEXT NOT NULL DEFAULT '{}',
+		adapters TEXT NOT NULL DEFAULT '[]',
+		pipelines TEXT NOT NULL DEFAULT '[]',
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL
+	)`
+	if _, err := r.db.ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("creating projects table: %w", err)
+	}
+	return nil
 }
 
 // Create persists a new project. Returns an error if a project with the same

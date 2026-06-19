@@ -15,9 +15,9 @@ import (
 
 // ─── Setup ─────────────────────────────────────────────────────────────────
 
-// setupTestDB opens an in-memory SQLite database, creates the projects table,
-// and returns a SQLiteProjectRepository for testing.
-func setupTestDB(t *testing.T) (*sql.DB, repository.ProjectRepository) {
+// setupTestDB opens an in-memory SQLite database, creates the projects table
+// via migration, and returns a SQLiteProjectRepository for testing.
+func setupTestDB(t *testing.T) (*sql.DB, *repository.SQLiteProjectRepository) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite3", ":memory:")
@@ -28,23 +28,10 @@ func setupTestDB(t *testing.T) (*sql.DB, repository.ProjectRepository) {
 		_ = db.Close()
 	})
 
-	_, err = db.ExecContext(context.Background(), `
-		CREATE TABLE IF NOT EXISTS projects (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			repo_url TEXT NOT NULL,
-			definition TEXT NOT NULL DEFAULT '{}',
-			adapters TEXT NOT NULL DEFAULT '[]',
-			pipelines TEXT NOT NULL DEFAULT '[]',
-			created_at DATETIME NOT NULL,
-			updated_at DATETIME NOT NULL
-		);
-	`)
-	if err != nil {
-		t.Fatalf("failed to create projects table: %v", err)
-	}
-
 	repo := repository.NewSQLiteProjectRepository(db)
+	if err := repo.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to run migration: %v", err)
+	}
 	return db, repo
 }
 
