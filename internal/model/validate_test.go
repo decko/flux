@@ -107,6 +107,32 @@ func TestTicket_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "invalid relation type",
+			ticket: Ticket{
+				Title:     "Implement feature X",
+				ProjectID: "proj-1",
+				Source:    TicketSourceGitHub,
+				Status:    TicketStatusOpen,
+				Relationships: []Relationship{
+					{Type: "unknown", TargetID: "ticket-2"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty target id in relationship",
+			ticket: Ticket{
+				Title:     "Implement feature X",
+				ProjectID: "proj-1",
+				Source:    TicketSourceGitHub,
+				Status:    TicketStatusOpen,
+				Relationships: []Relationship{
+					{Type: RelationBlocks, TargetID: ""},
+				},
+			},
+			wantErr: true,
+		},
+		{
 			name:    "all fields empty",
 			ticket:  Ticket{},
 			wantErr: true,
@@ -196,6 +222,34 @@ func TestPullRequest_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "invalid review status",
+			pr: PullRequest{
+				Title:     "Add feature X",
+				ProjectID: "proj-1",
+				URL:       "https://github.com/org/repo/pull/1",
+				Source:    PRSourceGitHub,
+				Status:    PRStatusOpen,
+				Reviews: []Review{
+					{Author: "reviewer", Status: "unknown"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid with review",
+			pr: PullRequest{
+				Title:     "Add feature X",
+				ProjectID: "proj-1",
+				URL:       "https://github.com/org/repo/pull/1",
+				Source:    PRSourceGitHub,
+				Status:    PRStatusOpen,
+				Reviews: []Review{
+					{Author: "reviewer", Status: ReviewStatusApproved},
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name:    "all fields empty",
 			pr:      PullRequest{},
 			wantErr: true,
@@ -282,6 +336,50 @@ func TestPipelineRun_Validate(t *testing.T) {
 				Status:       "unknown",
 			},
 			wantErr: true,
+		},
+		{
+			name: "invalid phase status",
+			run: PipelineRun{
+				ProjectID:    "proj-1",
+				TicketID:     "ticket-1",
+				Orchestrator: "soda",
+				Pipeline:     "test-and-deploy",
+				Status:       RunStatusPending,
+				Phases: []PhaseResult{
+					{Name: "build", Status: RunStatusCompleted},
+					{Name: "test", Status: "unknown"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing phase name",
+			run: PipelineRun{
+				ProjectID:    "proj-1",
+				TicketID:     "ticket-1",
+				Orchestrator: "soda",
+				Pipeline:     "test-and-deploy",
+				Status:       RunStatusPending,
+				Phases: []PhaseResult{
+					{Name: "", Status: RunStatusPending},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid with phases",
+			run: PipelineRun{
+				ProjectID:    "proj-1",
+				TicketID:     "ticket-1",
+				Orchestrator: "soda",
+				Pipeline:     "test-and-deploy",
+				Status:       RunStatusCompleted,
+				Phases: []PhaseResult{
+					{Name: "build", Status: RunStatusCompleted},
+					{Name: "test", Status: RunStatusCompleted},
+				},
+			},
+			wantErr: false,
 		},
 		{
 			name:    "all fields empty",

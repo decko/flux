@@ -1,6 +1,9 @@
 package model
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // isValidTicketSource checks if the given source is a known ticket source.
 func isValidTicketSource(s TicketSource) bool {
@@ -16,6 +19,16 @@ func isValidTicketSource(s TicketSource) bool {
 func isValidTicketStatus(s TicketStatus) bool {
 	switch s {
 	case TicketStatusOpen, TicketStatusClosed, TicketStatusInProgress:
+		return true
+	default:
+		return false
+	}
+}
+
+// isValidRelationType checks if the given relation type is a known type.
+func isValidRelationType(r RelationType) bool {
+	switch r {
+	case RelationBlocks, RelationBlockedBy, RelationRelatesTo, RelationParent, RelationChild:
 		return true
 	default:
 		return false
@@ -42,6 +55,16 @@ func isValidPRStatus(s PRStatus) bool {
 	}
 }
 
+// isValidReviewStatus checks if the given status is a known review status.
+func isValidReviewStatus(s ReviewStatus) bool {
+	switch s {
+	case ReviewStatusApproved, ReviewStatusChangesRequested, ReviewStatusCommented:
+		return true
+	default:
+		return false
+	}
+}
+
 // isValidRunStatus checks if the given status is a known pipeline run status.
 func isValidRunStatus(s RunStatus) bool {
 	switch s {
@@ -53,72 +76,99 @@ func isValidRunStatus(s RunStatus) bool {
 }
 
 // Validate checks that the project has all required fields populated.
+// Returns all validation errors joined together.
 func (p Project) Validate() error {
+	var errs []error
 	if p.Name == "" {
-		return fmt.Errorf("project name is required")
+		errs = append(errs, fmt.Errorf("project name is required"))
 	}
 	if p.RepoURL == "" {
-		return fmt.Errorf("project repo url is required")
+		errs = append(errs, fmt.Errorf("project repo url is required"))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
-// Validate checks that the ticket has all required fields populated
-// and that its Source and Status are valid enum values.
+// Validate checks that the ticket has all required fields populated,
+// that its Source and Status are valid enum values, and that its
+// Relationships have valid types and target IDs.
 func (t Ticket) Validate() error {
+	var errs []error
 	if t.Title == "" {
-		return fmt.Errorf("ticket title is required")
+		errs = append(errs, fmt.Errorf("ticket title is required"))
 	}
 	if t.ProjectID == "" {
-		return fmt.Errorf("ticket project id is required")
+		errs = append(errs, fmt.Errorf("ticket project id is required"))
 	}
 	if !isValidTicketSource(t.Source) {
-		return fmt.Errorf("invalid ticket source: %s", t.Source)
+		errs = append(errs, fmt.Errorf("invalid ticket source: %s", t.Source))
 	}
 	if !isValidTicketStatus(t.Status) {
-		return fmt.Errorf("invalid ticket status: %s", t.Status)
+		errs = append(errs, fmt.Errorf("invalid ticket status: %s", t.Status))
 	}
-	return nil
+	for i, rel := range t.Relationships {
+		if !isValidRelationType(rel.Type) {
+			errs = append(errs, fmt.Errorf("invalid relation type at index %d: %s", i, rel.Type))
+		}
+		if rel.TargetID == "" {
+			errs = append(errs, fmt.Errorf("empty target id in relationship at index %d", i))
+		}
+	}
+	return errors.Join(errs...)
 }
 
-// Validate checks that the pull request has all required fields populated
-// and that its Source and Status are valid enum values.
+// Validate checks that the pull request has all required fields populated,
+// that its Source, Status, and Review statuses are valid enum values.
 func (pr PullRequest) Validate() error {
+	var errs []error
 	if pr.Title == "" {
-		return fmt.Errorf("pull request title is required")
+		errs = append(errs, fmt.Errorf("pull request title is required"))
 	}
 	if pr.ProjectID == "" {
-		return fmt.Errorf("pull request project id is required")
+		errs = append(errs, fmt.Errorf("pull request project id is required"))
 	}
 	if pr.URL == "" {
-		return fmt.Errorf("pull request url is required")
+		errs = append(errs, fmt.Errorf("pull request url is required"))
 	}
 	if !isValidPRSource(pr.Source) {
-		return fmt.Errorf("invalid pull request source: %s", pr.Source)
+		errs = append(errs, fmt.Errorf("invalid pull request source: %s", pr.Source))
 	}
 	if !isValidPRStatus(pr.Status) {
-		return fmt.Errorf("invalid pull request status: %s", pr.Status)
+		errs = append(errs, fmt.Errorf("invalid pull request status: %s", pr.Status))
 	}
-	return nil
+	for i, rev := range pr.Reviews {
+		if !isValidReviewStatus(rev.Status) {
+			errs = append(errs, fmt.Errorf("invalid review status at index %d: %s", i, rev.Status))
+		}
+	}
+	return errors.Join(errs...)
 }
 
-// Validate checks that the pipeline run has all required fields populated
-// and that its Status is a valid enum value.
+// Validate checks that the pipeline run has all required fields populated,
+// that its Status is a valid enum value, and that all phases have valid statuses.
 func (r PipelineRun) Validate() error {
+	var errs []error
 	if r.ProjectID == "" {
-		return fmt.Errorf("pipeline run project id is required")
+		errs = append(errs, fmt.Errorf("pipeline run project id is required"))
 	}
 	if r.TicketID == "" {
-		return fmt.Errorf("pipeline run ticket id is required")
+		errs = append(errs, fmt.Errorf("pipeline run ticket id is required"))
 	}
 	if r.Orchestrator == "" {
-		return fmt.Errorf("pipeline run orchestrator is required")
+		errs = append(errs, fmt.Errorf("pipeline run orchestrator is required"))
 	}
 	if r.Pipeline == "" {
-		return fmt.Errorf("pipeline run pipeline is required")
+		errs = append(errs, fmt.Errorf("pipeline run pipeline is required"))
 	}
 	if !isValidRunStatus(r.Status) {
-		return fmt.Errorf("invalid pipeline run status: %s", r.Status)
+		errs = append(errs, fmt.Errorf("invalid pipeline run status: %s", r.Status))
 	}
-	return nil
+	for i, phase := range r.Phases {
+		if phase.Name == "" {
+			errs = append(errs, fmt.Errorf("phase name is required at index %d", i))
+		}
+		if !isValidRunStatus(phase.Status) {
+			errs = append(errs, fmt.Errorf("invalid phase status at index %d: %s", i, phase.Status))
+		}
+	}
+	return errors.Join(errs...)
 }

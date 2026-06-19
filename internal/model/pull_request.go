@@ -21,6 +21,16 @@ const (
 	PRStatusClosed PRStatus = "closed"
 )
 
+// ReviewStatus represents the outcome of a code review on a pull request.
+type ReviewStatus string
+
+// Known review outcomes.
+const (
+	ReviewStatusApproved         ReviewStatus = "approved"
+	ReviewStatusChangesRequested ReviewStatus = "changes_requested"
+	ReviewStatusCommented        ReviewStatus = "commented"
+)
+
 // PullRequest represents a pull request or merge request
 // tracked from a source system like GitHub or GitLab.
 type PullRequest struct {
@@ -39,8 +49,8 @@ type PullRequest struct {
 
 // Review represents a code review submitted on a pull request.
 type Review struct {
-	Author    string    `json:"author"`
-	Status    string    `json:"status"`
-	Comment   string    `json:"comment"`
-	CreatedAt time.Time `json:"created_at"`
+	Author    string       `json:"author"`
+	Status    ReviewStatus `json:"status"`
+	Comment   string       `json:"comment"`
+	CreatedAt time.Time    `json:"created_at"`
 }
