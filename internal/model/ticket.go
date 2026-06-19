@@ -13,8 +13,8 @@ const (
 type TicketStatus string
 
 const (
-	TicketStatusOpen     TicketStatus = "open"
-	TicketStatusClosed   TicketStatus = "closed"
+	TicketStatusOpen       TicketStatus = "open"
+	TicketStatusClosed     TicketStatus = "closed"
 	TicketStatusInProgress TicketStatus = "in_progress"
 )
 
