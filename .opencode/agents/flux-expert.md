@@ -36,9 +36,9 @@ Every public type, function, and interface must have godoc comments. Update `doc
 | frontend-coder | v4-flash (max effort) | TypeScript/React implementation |
 | reviewer-router | v4-pro (high effort) | Decide which reviewers to invoke |
 | go-reviewer | qwen3.7-max | Go review (5-layer pipeline, correctness focus) |
-| go-reviewer2 | kimi-k2.7 | Go review (5-layer pipeline, architecture focus) |
+| go-reviewer2 | kimi-k2.7-code | Go review (5-layer pipeline, architecture focus) |
 | frontend-reviewer | qwen3.7-max | Frontend review (5-layer pipeline, correctness focus) |
-| frontend-reviewer2 | kimi-k2.7 | Frontend review (5-layer pipeline, UX focus) |
+| frontend-reviewer2 | kimi-k2.7-code | Frontend review (5-layer pipeline, UX focus) |
 | senior-qe | v4-pro (high effort) | Adversarial final gate (cross-domain, requirement fit) |
 | go-scout | v4-flash | Codebase exploration |
 
