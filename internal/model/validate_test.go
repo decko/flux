@@ -146,9 +146,10 @@ func TestPullRequest_Validate(t *testing.T) {
 		{
 			name: "missing title",
 			pr: PullRequest{
-				URL:    "https://github.com/org/repo/pull/1",
-				Source: PRSourceGitHub,
-				Status: PRStatusOpen,
+				ProjectID: "proj-1",
+				URL:       "https://github.com/org/repo/pull/1",
+				Source:    PRSourceGitHub,
+				Status:    PRStatusOpen,
 			},
 			wantErr: true,
 		},
@@ -165,29 +166,32 @@ func TestPullRequest_Validate(t *testing.T) {
 		{
 			name: "missing url",
 			pr: PullRequest{
-				Title:  "Add feature X",
-				Source: PRSourceGitHub,
-				Status: PRStatusOpen,
+				Title:     "Add feature X",
+				ProjectID: "proj-1",
+				Source:    PRSourceGitHub,
+				Status:    PRStatusOpen,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid source",
 			pr: PullRequest{
-				Title:  "Add feature X",
-				URL:    "https://github.com/org/repo/pull/1",
-				Source: "unknown",
-				Status: PRStatusOpen,
+				Title:     "Add feature X",
+				ProjectID: "proj-1",
+				URL:       "https://github.com/org/repo/pull/1",
+				Source:    "unknown",
+				Status:    PRStatusOpen,
 			},
 			wantErr: true,
 		},
 		{
 			name: "invalid status",
 			pr: PullRequest{
-				Title:  "Add feature X",
-				URL:    "https://github.com/org/repo/pull/1",
-				Source: PRSourceGitHub,
-				Status: "unknown",
+				Title:     "Add feature X",
+				ProjectID: "proj-1",
+				URL:       "https://github.com/org/repo/pull/1",
+				Source:    PRSourceGitHub,
+				Status:    "unknown",
 			},
 			wantErr: true,
 		},
@@ -251,14 +255,18 @@ func TestPipelineRun_Validate(t *testing.T) {
 		{
 			name: "missing orchestrator",
 			run: PipelineRun{
-				Pipeline: "test-and-deploy",
-				Status:   RunStatusPending,
+				ProjectID: "proj-1",
+				TicketID:  "ticket-1",
+				Pipeline:  "test-and-deploy",
+				Status:    RunStatusPending,
 			},
 			wantErr: true,
 		},
 		{
 			name: "missing pipeline",
 			run: PipelineRun{
+				ProjectID:    "proj-1",
+				TicketID:     "ticket-1",
 				Orchestrator: "soda",
 				Status:       RunStatusPending,
 			},
@@ -267,6 +275,8 @@ func TestPipelineRun_Validate(t *testing.T) {
 		{
 			name: "invalid status",
 			run: PipelineRun{
+				ProjectID:    "proj-1",
+				TicketID:     "ticket-1",
 				Orchestrator: "soda",
 				Pipeline:     "test-and-deploy",
 				Status:       "unknown",
