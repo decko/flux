@@ -37,7 +37,7 @@
       }
     },
     "go-reviewer2": {
-      "model": "opencode-go/kimi-k2.7",
+      "model": "opencode-go/kimi-k2.7-code",
       "permission": {
         "lsp": "allow"
       }
@@ -74,7 +74,7 @@
       }
     },
     "frontend-reviewer2": {
-      "model": "opencode-go/kimi-k2.7",
+      "model": "opencode-go/kimi-k2.7-code",
       "permission": {
         "lsp": "allow"
       }
