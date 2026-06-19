@@ -46,11 +46,9 @@ Every public type, function, and interface must have godoc comments. Update `doc
 
 ```
 1. Read the GitHub issue completely
-2. Check issue completeness:
-   - Has context, acceptance criteria, implementation prompts?
-   - Has key invariants, dependent issues, DoD checklist?
-   - If NO → call feature-intake to produce impact assessment
-   - If YES → proceed to step 3
+2. Check issue completeness (see below)
+   - If INCOMPLETE → call feature-intake to produce impact assessment
+   - If COMPLETE → proceed to step 3
 3. Check for related issues and PRs
 4. Plan the approach (use go-architect for complex decisions)
 5. Write tests first (delegate to go-tester)
@@ -72,6 +70,34 @@ Every public type, function, and interface must have godoc comments. Update `doc
 11. Create PR
 ```
 
+### Step 2 — Issue Completeness Check
+
+After reading the issue, check for these required sections:
+
+| Section | Required? | How to detect |
+|---------|-----------|---------------|
+| **Context** | Yes | `## Context` heading with explanation of why |
+| **Acceptance Criteria** | Yes | `## Acceptance Criteria` with `- [ ]` checklist items |
+| **Implementation Prompts** | Yes | `## Implementation prompts` with agent dispatch list |
+| **Key Invariants** | Yes | `Key invariants:` list referencing hard rules |
+| **Dependent Issues** | Yes | `Dependent issues:` with `#number` references |
+| **DoD Checklist** | Yes | `## DoD Checklist` with `- [ ]` items |
+
+**Decision:**
+- If ALL sections present with meaningful content → COMPLETE, proceed to step 3
+- If ANY section is missing or empty → INCOMPLETE, call `feature-intake`
+
+**When calling feature-intake**, pass:
+- Issue number
+- Which sections are missing
+- The issue body (so it can analyze what's there)
+
+**After feature-intake returns**, use its impact assessment to:
+- Understand which agents to dispatch
+- Identify blockers and dependencies
+- Know which invariants apply
+- Decide if the issue is ready to implement
+
 ### Review Loop Details
 
 **Cycle 1-3:**
@@ -83,7 +109,7 @@ Every public type, function, and interface must have godoc comments. Update `doc
    - Current cycle number
    - Prior findings (empty on cycle 1, previous findings on cycles 2-3)
 4. Collect verdicts
-5. If ALL reviewers return APPROVED → proceed to senior-qe (step 9)
+5. If ALL reviewers return APPROVED → proceed to senior-qe (step 10)
 6. If any return NEEDS CHANGES or BLOCKED:
    - Collect all findings
    - Delegate fixes to the appropriate coder (go-coder or frontend-coder)
@@ -91,14 +117,14 @@ Every public type, function, and interface must have godoc comments. Update `doc
    - Increment cycle counter
 7. If 3 cycles exhausted and still not approved → **STOP and ask user**
 
-**Senior QE gate (step 9):**
+**Senior QE gate (step 10):**
 1. Call `senior-qe` with:
    - Changed files
    - Issue number
    - All reviewer verdicts and findings (including resolved ones)
    - Issue acceptance criteria
 2. If APPROVED → create PR
-3. If NEEDS CHANGES → delegate fixes to coder, re-enter review loop (back to step 8)
+3. If NEEDS CHANGES → delegate fixes to coder, re-enter review loop (back to step 9)
 4. If BLOCKED → **STOP and ask user**
 
 **User escalation format:**
