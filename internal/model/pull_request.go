@@ -2,21 +2,37 @@ package model
 
 import "time"
 
+// PRSource identifies the origin system for a pull request.
 type PRSource string
 
+// Supported pull request source systems.
 const (
 	PRSourceGitHub PRSource = "github"
 	PRSourceGitLab PRSource = "gitlab"
 )
 
+// PRStatus represents the lifecycle state of a pull request.
 type PRStatus string
 
+// Known pull request statuses.
 const (
 	PRStatusOpen   PRStatus = "open"
 	PRStatusMerged PRStatus = "merged"
 	PRStatusClosed PRStatus = "closed"
 )
 
+// ReviewStatus represents the outcome of a code review on a pull request.
+type ReviewStatus string
+
+// Known review outcomes.
+const (
+	ReviewStatusApproved         ReviewStatus = "approved"
+	ReviewStatusChangesRequested ReviewStatus = "changes_requested"
+	ReviewStatusCommented        ReviewStatus = "commented"
+)
+
+// PullRequest represents a pull request or merge request
+// tracked from a source system like GitHub or GitLab.
 type PullRequest struct {
 	ID         string    `json:"id"`
 	ProjectID  string    `json:"project_id"`
@@ -31,9 +47,10 @@ type PullRequest struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+// Review represents a code review submitted on a pull request.
 type Review struct {
-	Author    string    `json:"author"`
-	Status    string    `json:"status"`
-	Comment   string    `json:"comment"`
-	CreatedAt time.Time `json:"created_at"`
+	Author    string       `json:"author"`
+	Status    ReviewStatus `json:"status"`
+	Comment   string       `json:"comment"`
+	CreatedAt time.Time    `json:"created_at"`
 }
