@@ -135,16 +135,27 @@ func TestPullRequest_Validate(t *testing.T) {
 		{
 			name: "valid pull request",
 			pr: PullRequest{
-				Title:  "Add feature X",
-				URL:    "https://github.com/org/repo/pull/1",
-				Source: PRSourceGitHub,
-				Status: PRStatusOpen,
+				Title:     "Add feature X",
+				ProjectID: "proj-1",
+				URL:       "https://github.com/org/repo/pull/1",
+				Source:    PRSourceGitHub,
+				Status:    PRStatusOpen,
 			},
 			wantErr: false,
 		},
 		{
 			name: "missing title",
 			pr: PullRequest{
+				URL:    "https://github.com/org/repo/pull/1",
+				Source: PRSourceGitHub,
+				Status: PRStatusOpen,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing project id",
+			pr: PullRequest{
+				Title:  "Add feature X",
 				URL:    "https://github.com/org/repo/pull/1",
 				Source: PRSourceGitHub,
 				Status: PRStatusOpen,
@@ -209,11 +220,33 @@ func TestPipelineRun_Validate(t *testing.T) {
 		{
 			name: "valid pipeline run",
 			run: PipelineRun{
+				ProjectID:    "proj-1",
+				TicketID:     "ticket-1",
 				Orchestrator: "soda",
 				Pipeline:     "test-and-deploy",
 				Status:       RunStatusPending,
 			},
 			wantErr: false,
+		},
+		{
+			name: "missing project id",
+			run: PipelineRun{
+				TicketID:     "ticket-1",
+				Orchestrator: "soda",
+				Pipeline:     "test-and-deploy",
+				Status:       RunStatusPending,
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing ticket id",
+			run: PipelineRun{
+				ProjectID:    "proj-1",
+				Orchestrator: "soda",
+				Pipeline:     "test-and-deploy",
+				Status:       RunStatusPending,
+			},
+			wantErr: true,
 		},
 		{
 			name: "missing orchestrator",

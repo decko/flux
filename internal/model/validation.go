@@ -87,6 +87,9 @@ func (pr PullRequest) Validate() error {
 	if pr.Title == "" {
 		return fmt.Errorf("pull request title is required")
 	}
+	if pr.ProjectID == "" {
+		return fmt.Errorf("pull request project id is required")
+	}
 	if pr.URL == "" {
 		return fmt.Errorf("pull request url is required")
 	}
@@ -102,6 +105,12 @@ func (pr PullRequest) Validate() error {
 // Validate checks that the pipeline run has all required fields populated
 // and that its Status is a valid enum value.
 func (r PipelineRun) Validate() error {
+	if r.ProjectID == "" {
+		return fmt.Errorf("pipeline run project id is required")
+	}
+	if r.TicketID == "" {
+		return fmt.Errorf("pipeline run ticket id is required")
+	}
 	if r.Orchestrator == "" {
 		return fmt.Errorf("pipeline run orchestrator is required")
 	}
