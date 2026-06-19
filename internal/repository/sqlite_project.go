@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"time"
 
 	"github.com/decko/flux/internal/model"
 )
@@ -23,25 +23,24 @@ type SQLiteProjectRepository struct {
 }
 
 // NewSQLiteProjectRepository creates a new SQLiteProjectRepository backed by
-// the given *sql.DB connection. It configures SQLite-specific connection pool
-// settings: single writer (SQLite serializes writes), WAL mode for concurrent
-// reads, and no idle connection timeout.
+// the given *sql.DB connection.
+//
+// The caller is responsible for configuring the *sql.DB via ConfigureSQLiteDB
+// before calling this constructor. NewSQLiteProjectRepository does not mutate
+// the connection pool — it only holds a reference to the already-configured
+// database handle.
+//
+// The caller must also ensure the "sqlite3" driver is imported:
+//
+//	import _ "github.com/mattn/go-sqlite3"
 func NewSQLiteProjectRepository(db *sql.DB) *SQLiteProjectRepository {
-	// SQLite serializes writes, so limit to one open connection for safety.
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(0)
-	db.SetConnMaxIdleTime(5 * time.Minute)
 	return &SQLiteProjectRepository{db: db}
 }
 
-// Migrate runs the database migration for the projects table and enables
-// WAL journal mode for improved read concurrency under web server loads.
+// Migrate creates the projects table if it does not already exist.
+// SQLite journal mode and connection pool settings are managed by
+// ConfigureSQLiteDB (called once at application startup), not here.
 func (r *SQLiteProjectRepository) Migrate(ctx context.Context) error {
-	if _, err := r.db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
-		return fmt.Errorf("enabling WAL mode: %w", err)
-	}
-
 	query := `CREATE TABLE IF NOT EXISTS projects (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL,
@@ -58,8 +57,9 @@ func (r *SQLiteProjectRepository) Migrate(ctx context.Context) error {
 	return nil
 }
 
-// Create persists a new project. Returns an error if a project with the same
-// ID already exists (SQLite UNIQUE constraint violation).
+// Create persists a new project. All time.Time values are normalized to UTC
+// before storage. Returns an error if a project with the same ID already
+// exists (SQLite UNIQUE constraint violation).
 func (r *SQLiteProjectRepository) Create(ctx context.Context, project model.Project) error {
 	def, err := json.Marshal(project.Definition)
 	if err != nil {
@@ -82,8 +82,8 @@ func (r *SQLiteProjectRepository) Create(ctx context.Context, project model.Proj
 		string(def),
 		string(adapters),
 		string(pipelines),
-		project.CreatedAt,
-		project.UpdatedAt,
+		project.CreatedAt.UTC(),
+		project.UpdatedAt.UTC(),
 	)
 	if err != nil {
 		return fmt.Errorf("creating project: %w", err)
@@ -109,7 +109,7 @@ func (r *SQLiteProjectRepository) Get(ctx context.Context, id string) (model.Pro
 		&project.CreatedAt,
 		&project.UpdatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.Project{}, ErrNotFound
 	}
 	if err != nil {
@@ -176,8 +176,9 @@ func (r *SQLiteProjectRepository) List(ctx context.Context, _ ProjectFilter) ([]
 	return projects, nil
 }
 
-// Update modifies an existing project. Returns ErrNotFound if no project with
-// the given ID exists.
+// Update modifies an existing project. All time.Time values are normalized to
+// UTC before storage. Returns ErrNotFound if no project with the given ID
+// exists.
 func (r *SQLiteProjectRepository) Update(ctx context.Context, project model.Project) error {
 	def, err := json.Marshal(project.Definition)
 	if err != nil {
@@ -199,7 +200,7 @@ func (r *SQLiteProjectRepository) Update(ctx context.Context, project model.Proj
 		string(def),
 		string(adapters),
 		string(pipelines),
-		project.UpdatedAt,
+		project.UpdatedAt.UTC(),
 		project.ID,
 	)
 	if err != nil {

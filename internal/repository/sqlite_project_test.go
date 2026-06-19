@@ -15,8 +15,9 @@ import (
 
 // ─── Setup ─────────────────────────────────────────────────────────────────
 
-// setupTestDB opens an in-memory SQLite database, creates the projects table
-// via migration, and returns a SQLiteProjectRepository for testing.
+// setupTestDB opens an in-memory SQLite database, configures it for SQLite
+// use (pool + WAL), creates the projects table via migration, and returns a
+// SQLiteProjectRepository for testing.
 func setupTestDB(t *testing.T) (*sql.DB, *repository.SQLiteProjectRepository) {
 	t.Helper()
 
@@ -27,6 +28,10 @@ func setupTestDB(t *testing.T) (*sql.DB, *repository.SQLiteProjectRepository) {
 	t.Cleanup(func() {
 		_ = db.Close()
 	})
+
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		t.Fatalf("failed to configure SQLite: %v", err)
+	}
 
 	repo := repository.NewSQLiteProjectRepository(db)
 	if err := repo.Migrate(context.Background()); err != nil {
