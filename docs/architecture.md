@@ -174,18 +174,40 @@ type AgentWorker interface {
 
 ### Repository
 
-Storage abstraction.
+Storage abstraction. All methods use value types (not pointers). Each repository has a corresponding filter type for List operations. Get/Update/Delete return `ErrNotFound` on missing entities.
 
 ```go
 type ProjectRepository interface {
-    Create(ctx context.Context, project *Project) error
-    Get(ctx context.Context, id string) (*Project, error)
-    List(ctx context.Context) ([]*Project, error)
-    Update(ctx context.Context, project *Project) error
+    Create(ctx context.Context, project Project) error
+    Get(ctx context.Context, id string) (Project, error)
+    List(ctx context.Context, filter ProjectFilter) ([]Project, error)
+    Update(ctx context.Context, project Project) error
     Delete(ctx context.Context, id string) error
 }
 
-// Similar for TicketRepository, PipelineRunRepository, PRRepository, UserRepository
+type TicketRepository interface {
+    Create(ctx context.Context, ticket Ticket) error
+    Get(ctx context.Context, id string) (Ticket, error)
+    List(ctx context.Context, filter TicketFilter) ([]Ticket, error)
+    Update(ctx context.Context, ticket Ticket) error
+    Delete(ctx context.Context, id string) error
+}
+
+type PullRequestRepository interface {
+    Create(ctx context.Context, pr PullRequest) error
+    Get(ctx context.Context, id string) (PullRequest, error)
+    List(ctx context.Context, filter PullRequestFilter) ([]PullRequest, error)
+    Update(ctx context.Context, pr PullRequest) error
+    Delete(ctx context.Context, id string) error
+}
+
+type PipelineRunRepository interface {
+    Create(ctx context.Context, run PipelineRun) error
+    Get(ctx context.Context, id string) (PipelineRun, error)
+    List(ctx context.Context, filter PipelineRunFilter) ([]PipelineRun, error)
+    Update(ctx context.Context, run PipelineRun) error
+    // No Delete — pipeline runs are immutable records
+}
 ```
 
 ## Data Flow
