@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/repository"
 )
 
 func TestNewServer(t *testing.T) {
@@ -57,7 +63,23 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestAPIV1RoutesExist(t *testing.T) {
-	srv := NewServer()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open in-memory SQLite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		t.Fatalf("failed to configure SQLite: %v", err)
+	}
+
+	repo := repository.NewSQLiteProjectRepository(db)
+	if err := repo.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to run migration: %v", err)
+	}
+
+	svc := domain.NewProjectService(repo)
+	srv := NewServer(WithProjectService(svc))
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 

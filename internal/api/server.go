@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/decko/flux/internal/domain"
 )
 
 // Server is the HTTP server for the flux API. It wraps a chi router
@@ -14,6 +16,7 @@ import (
 type Server struct {
 	router     *chi.Mux
 	corsOrigin string
+	projectSvc *domain.ProjectService
 }
 
 // ServerOption configures a Server.
@@ -25,6 +28,13 @@ type ServerOption func(*Server)
 func WithCORSOrigin(origin string) ServerOption {
 	return func(s *Server) {
 		s.corsOrigin = origin
+	}
+}
+
+// WithProjectService injects the project service for project CRUD endpoints.
+func WithProjectService(svc *domain.ProjectService) ServerOption {
+	return func(s *Server) {
+		s.projectSvc = svc
 	}
 }
 
