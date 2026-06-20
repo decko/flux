@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -30,10 +31,17 @@ func CORSMiddleware(origin string) func(http.Handler) http.Handler {
 }
 
 // ErrorHandlerMiddleware catches panics and converts them to JSON error responses.
+// Recovered panics are logged at error level for observability.
 func ErrorHandlerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
+				slog.Error("panic recovered in handler",
+					"error", rec,
+					"request_id", middleware.GetReqID(r.Context()),
+					"method", r.Method,
+					"path", r.URL.Path,
+				)
 				writeJSONError(w, http.StatusInternalServerError, "Internal Server Error", middleware.GetReqID(r.Context()))
 			}
 		}()

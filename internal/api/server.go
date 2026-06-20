@@ -70,6 +70,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // slogLogger is a middleware that logs each request using structured logging.
 // It sets the X-Request-Id response header and records the status code.
+// The log call uses defer to ensure it runs even when downstream handlers panic.
 func slogLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -79,15 +80,16 @@ func slogLogger(next http.Handler) http.Handler {
 		}
 
 		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		defer func() {
+			slog.LogAttrs(r.Context(), slog.LevelInfo, "request",
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.Int("status", lrw.statusCode),
+				slog.Duration("duration", time.Since(start)),
+				slog.String("request_id", reqID),
+			)
+		}()
 		next.ServeHTTP(lrw, r)
-
-		slog.LogAttrs(r.Context(), slog.LevelInfo, "request",
-			slog.String("method", r.Method),
-			slog.String("path", r.URL.Path),
-			slog.Int("status", lrw.statusCode),
-			slog.Duration("duration", time.Since(start)),
-			slog.String("request_id", reqID),
-		)
 	})
 }
 
