@@ -37,6 +37,12 @@ func NewServer(opts ...ServerOption) *Server {
 		corsOrigin: "*",
 	}
 
+	// Apply options before middleware registration so they affect
+	// middleware configuration (e.g., CORS origin).
+	for _, opt := range opts {
+		opt(s)
+	}
+
 	// ErrorHandlerMiddleware must be outermost so it catches panics
 	// from all downstream middleware (RequestID, slogLogger, CORS) and handlers.
 	s.router.Use(ErrorHandlerMiddleware)
@@ -53,10 +59,6 @@ func NewServer(opts ...ServerOption) *Server {
 	}))
 
 	s.registerRoutes()
-
-	for _, opt := range opts {
-		opt(s)
-	}
 
 	return s
 }

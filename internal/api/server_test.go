@@ -132,6 +132,26 @@ func TestCORSHeaders(t *testing.T) {
 	})
 }
 
+func TestWithCORSOrigin(t *testing.T) {
+	srv := NewServer(WithCORSOrigin("http://localhost:3000"))
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/health", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /health: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	got := resp.Header.Get("Access-Control-Allow-Origin")
+	if got != "http://localhost:3000" {
+		t.Errorf("got Access-Control-Allow-Origin %q, want %q", got, "http://localhost:3000")
+	}
+}
+
 func TestRequestIDHeader(t *testing.T) {
 	srv := NewServer()
 	ts := httptest.NewServer(srv)
