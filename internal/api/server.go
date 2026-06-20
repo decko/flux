@@ -12,24 +12,37 @@ import (
 // Server is the HTTP server for the flux API. It wraps a chi router
 // with middleware and routes configured.
 type Server struct {
-	router *chi.Mux
+	router     *chi.Mux
+	corsOrigin string
 }
 
 // ServerOption configures a Server.
 type ServerOption func(*Server)
 
+// WithCORSOrigin sets the allowed CORS origin.
+// Defaults to "*" (allow all) for development.
+// TODO(#14): restrict CORS origin to SPA origin once configuration loading is in place.
+func WithCORSOrigin(origin string) ServerOption {
+	return func(s *Server) {
+		s.corsOrigin = origin
+	}
+}
+
 // NewServer creates a new Server with all middleware and routes registered.
-// Middleware order: RequestID → Logger → CORS → ErrorHandler
+// Middleware order: ErrorHandler (outermost, catches panics in all downstream middleware) →
+// RequestID → Logger → CORS
 func NewServer(opts ...ServerOption) *Server {
 	s := &Server{
-		router: chi.NewRouter(),
+		router:     chi.NewRouter(),
+		corsOrigin: "*",
 	}
 
-	// Middleware chain
+	// ErrorHandlerMiddleware must be outermost so it catches panics
+	// from all downstream middleware (RequestID, slogLogger, CORS) and handlers.
+	s.router.Use(ErrorHandlerMiddleware)
 	s.router.Use(middleware.RequestID)
 	s.router.Use(slogLogger)
-	s.router.Use(CORSMiddleware)
-	s.router.Use(ErrorHandlerMiddleware)
+	s.router.Use(CORSMiddleware(s.corsOrigin))
 
 	// Override chi's default 404/405 handlers with JSON responses.
 	s.router.NotFound(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

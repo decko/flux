@@ -24,7 +24,7 @@ func TestCORSMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := chi.NewRouter()
-			r.Use(CORSMiddleware)
+			r.Use(CORSMiddleware("*"))
 			r.Get("/test", func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})

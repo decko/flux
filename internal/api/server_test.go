@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -329,7 +330,7 @@ func TestConcurrentRequests(t *testing.T) {
 			}
 			_ = resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
-				errs <- err
+				errs <- fmt.Errorf("unexpected status %d", resp.StatusCode)
 			}
 		}()
 	}

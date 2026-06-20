@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/decko/flux/internal/api"
 )
@@ -16,7 +17,14 @@ func main() {
 
 	srv := api.NewServer()
 
-	addr := ":" + port
-	log.Printf("flux listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, srv))
+	httpServer := &http.Server{
+		Addr:         ":" + port,
+		Handler:      srv,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	log.Printf("flux listening on %s", httpServer.Addr)
+	log.Fatal(httpServer.ListenAndServe())
 }
