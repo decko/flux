@@ -375,6 +375,75 @@ func TestParseRelationships_CaseInsensitiveKeywords(t *testing.T) {
 	}
 }
 
+func TestParseRelationships_NoFalsePositives(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+		want []model.Relationship
+	}{
+		{
+			name: "discloses #5 should not match closes keyword",
+			body: "discloses #5",
+			want: []model.Relationship{
+				{Type: model.RelationRelatesTo, TargetID: "5"},
+			},
+		},
+		{
+			name: "unblocks #5 should not match blocks keyword",
+			body: "unblocks #5",
+			want: []model.Relationship{
+				{Type: model.RelationRelatesTo, TargetID: "5"},
+			},
+		},
+		{
+			name: "encloses #5 should not match closes keyword",
+			body: "encloses #5",
+			want: []model.Relationship{
+				{Type: model.RelationRelatesTo, TargetID: "5"},
+			},
+		},
+		{
+			name: "nodepends on #3 should not match depends on keyword",
+			body: "nodepends on #3",
+			want: []model.Relationship{
+				{Type: model.RelationRelatesTo, TargetID: "3"},
+			},
+		},
+		{
+			name: "grandparent of #5 should not match parent of keyword",
+			body: "grandparent of #5",
+			want: []model.Relationship{
+				{Type: model.RelationRelatesTo, TargetID: "5"},
+			},
+		},
+		{
+			name: "grandchild of #5 should not match child of keyword",
+			body: "grandchild of #5",
+			want: []model.Relationship{
+				{Type: model.RelationRelatesTo, TargetID: "5"},
+			},
+		},
+		{
+			name: "unblocked by #5 should not match blocked by keyword",
+			body: "unblocked by #5",
+			want: []model.Relationship{
+				{Type: model.RelationRelatesTo, TargetID: "5"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseRelationships(tt.body, nil, "")
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ParseRelationships() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseRelationships_KebabCase(t *testing.T) {
 	t.Parallel()
 

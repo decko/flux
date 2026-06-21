@@ -9,11 +9,11 @@ import (
 // Compiled regexes used by ParseRelationships.
 var (
 	// Keyword-based body patterns.
-	reCloses    = regexp.MustCompile(`(?i)(?:closes|fixes|resolves)\s+#(\d+)`)
-	reBlocks    = regexp.MustCompile(`(?i)blocks\s+#(\d+)`)
-	reBlockedBy = regexp.MustCompile(`(?i)(?:blocked\s+by|blocked-by|depends\s+on)\s+#(\d+)`)
-	reParentOf  = regexp.MustCompile(`(?i)parent\s+of\s+#(\d+)`)
-	reChildOf   = regexp.MustCompile(`(?i)child\s+of\s+#(\d+)`)
+	reCloses    = regexp.MustCompile(`(?i)\b(?:closes|fixes|resolves)\s+#(\d+)`)
+	reBlocks    = regexp.MustCompile(`(?i)\bblocks\s+#(\d+)`)
+	reBlockedBy = regexp.MustCompile(`(?i)\b(?:blocked\s+by|blocked-by|depends\s+on)\s+#(\d+)`)
+	reParentOf  = regexp.MustCompile(`(?i)\bparent\s+of\s+#(\d+)`)
+	reChildOf   = regexp.MustCompile(`(?i)\bchild\s+of\s+#(\d+)`)
 	reBare      = regexp.MustCompile(`#(\d+)`)
 
 	// Label-based patterns.
