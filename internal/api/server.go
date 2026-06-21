@@ -18,6 +18,7 @@ type Server struct {
 	corsOrigin string
 	projectSvc *domain.ProjectService
 	ticketSvc  *domain.TicketService
+	prSvc      *domain.PullRequestService
 }
 
 // ServerOption configures a Server.
@@ -43,6 +44,13 @@ func WithProjectService(svc *domain.ProjectService) ServerOption {
 func WithTicketService(svc *domain.TicketService) ServerOption {
 	return func(s *Server) {
 		s.ticketSvc = svc
+	}
+}
+
+// WithPRService injects the pull request service for pull request endpoints.
+func WithPRService(svc *domain.PullRequestService) ServerOption {
+	return func(s *Server) {
+		s.prSvc = svc
 	}
 }
 
