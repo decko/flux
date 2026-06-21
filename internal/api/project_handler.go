@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -54,11 +53,11 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 
 	p, err := s.projectSvc.Get(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "Not Found", middleware.GetReqID(r.Context()))
-			return
+		code, msg := serviceError(err)
+		if code == http.StatusInternalServerError {
+			slog.Error("get project", "error", err, "request_id", middleware.GetReqID(r.Context()))
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error", middleware.GetReqID(r.Context()))
+		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
 		return
 	}
 
@@ -124,11 +123,11 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if err := s.projectSvc.Delete(r.Context(), id); err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "Not Found", middleware.GetReqID(r.Context()))
-			return
+		code, msg := serviceError(err)
+		if code == http.StatusInternalServerError {
+			slog.Error("delete project", "error", err, "request_id", middleware.GetReqID(r.Context()))
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error", middleware.GetReqID(r.Context()))
+		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
 		return
 	}
 
