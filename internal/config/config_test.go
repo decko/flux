@@ -319,8 +319,43 @@ func TestConfig_Validate_EmptySyncInterval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Sync.Interval != "5m" {
-		t.Errorf("Sync.Interval = %q, want %q (defaulted to 5m)", cfg.Sync.Interval, "5m")
+}
+
+func TestConfig_Validate_UnknownAdapterType(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Adapters: []AdapterEntry{
+			{Type: "unknown", Owner: "decko", Repo: "flux"},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected error for unknown adapter type \"unknown\", got nil")
+	}
+}
+
+func TestConfig_Validate_EmptyAdapterType(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Adapters: []AdapterEntry{
+			{Type: "", Owner: "decko", Repo: "flux"},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected error for empty adapter type, got nil")
 	}
 }
 

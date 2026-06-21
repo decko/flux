@@ -132,6 +132,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid log level %q, must be one of: debug, info, warn, error", c.Logging.Level)
 	}
 	for i, a := range c.Adapters {
+		if a.Type == "" {
+			return fmt.Errorf("adapters[%d]: type is required", i)
+		}
 		switch a.Type {
 		case "github":
 			if a.Owner == "" {
@@ -140,12 +143,14 @@ func (c *Config) Validate() error {
 			if a.Repo == "" {
 				return fmt.Errorf("adapters[%d]: repo is required for github adapter", i)
 			}
+		default:
+			return fmt.Errorf("adapters[%d]: unknown adapter type %q", i, a.Type)
 		}
 	}
-	if c.Sync.Interval == "" {
-		c.Sync.Interval = "5m"
-	} else if _, err := time.ParseDuration(c.Sync.Interval); err != nil {
-		return fmt.Errorf("sync.interval %q is not a valid duration: %w", c.Sync.Interval, err)
+	if c.Sync.Interval != "" {
+		if _, err := time.ParseDuration(c.Sync.Interval); err != nil {
+			return fmt.Errorf("sync.interval %q is not a valid duration: %w", c.Sync.Interval, err)
+		}
 	}
 	return nil
 }
