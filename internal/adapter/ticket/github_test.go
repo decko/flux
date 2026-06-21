@@ -22,15 +22,16 @@ type githubLabel struct {
 // githubIssue maps to a GitHub API v3 Issue object. Only fields relevant
 // to the adapter are included.
 type githubIssue struct {
-	ID        int64         `json:"id"`
-	Number    int           `json:"number"`
-	Title     string        `json:"title"`
-	Body      string        `json:"body"`
-	State     string        `json:"state"`
-	Labels    []githubLabel `json:"labels,omitempty"`
-	HTMLURL   string        `json:"html_url"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
+	ID          int64         `json:"id"`
+	Number      int           `json:"number"`
+	Title       string        `json:"title"`
+	Body        string        `json:"body"`
+	State       string        `json:"state"`
+	Labels      []githubLabel `json:"labels,omitempty"`
+	PullRequest *struct{}     `json:"pull_request,omitempty"`
+	HTMLURL     string        `json:"html_url"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
 }
 
 // sendJSON is a helper for test handlers to write JSON responses.
@@ -107,6 +108,9 @@ func TestGitHubAdapter_ListTickets(t *testing.T) {
 				if !assertAuthorization(t, w, r) {
 					return
 				}
+				if r.URL.RawQuery != "state=all" {
+					t.Errorf("RawQuery = %q, want %q", r.URL.RawQuery, "state=all")
+				}
 				sendJSON(w, http.StatusOK, issues)
 			},
 			wantLen: 2,
@@ -156,6 +160,35 @@ func TestGitHubAdapter_ListTickets(t *testing.T) {
 			},
 			wantLen: 0,
 			wantErr: false,
+		},
+		{
+			name: "pull requests are filtered out",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if !assertAuthorization(t, w, r) {
+					return
+				}
+				sendJSON(w, http.StatusOK, []githubIssue{
+					{
+						ID: 1, Number: 42, Title: "Real issue",
+						Body: "This is an issue", State: "open",
+					},
+					{
+						ID: 2, Number: 43, Title: "PR #43",
+						Body: "This is a PR", State: "open",
+						PullRequest: &struct{}{},
+					},
+				})
+			},
+			wantLen: 1,
+			wantErr: false,
+			check: func(t *testing.T, tickets []model.Ticket) {
+				if len(tickets) != 1 {
+					return
+				}
+				if tickets[0].ExternalID != "42" {
+					t.Errorf("ExternalID = %q, want %q", tickets[0].ExternalID, "42")
+				}
+			},
 		},
 		{
 			name: "auth failure returns error",
@@ -411,14 +444,18 @@ func TestGitHubAdapter_UpdateTicket(t *testing.T) {
 				if !strings.Contains(r.URL.Path, "/42") {
 					t.Errorf("expected path to contain issue number 42, got %s", r.URL.Path)
 				}
+				if ua := r.Header.Get("User-Agent"); ua != "flux/0.1" {
+					t.Errorf("User-Agent = %q, want %q", ua, "flux/0.1")
+				}
 				// Verify Content-Type
 				if ct := r.Header.Get("Content-Type"); ct != "application/json" {
 					t.Errorf("Content-Type = %q, want %q", ct, "application/json")
 				}
-				// Verify request body includes status mapping
+				// Verify request body includes status mapping, title, and body
 				body, _ := io.ReadAll(r.Body)
 				var req struct {
 					Title string `json:"title"`
+					Body  string `json:"body"`
 					State string `json:"state"`
 				}
 				if err := json.Unmarshal(body, &req); err != nil {
@@ -427,15 +464,51 @@ func TestGitHubAdapter_UpdateTicket(t *testing.T) {
 				if req.State != "closed" {
 					t.Errorf("request state = %q, want %q", req.State, "closed")
 				}
+				if req.Title != "Updated title" {
+					t.Errorf("request title = %q, want %q", req.Title, "Updated title")
+				}
+				if req.Body != "New description" {
+					t.Errorf("request body = %q, want %q", req.Body, "New description")
+				}
 				sendJSON(w, http.StatusOK, githubIssue{
 					ID: 1, Number: 42, Title: req.Title,
 					State: req.State,
 				})
 			},
 			input: &model.Ticket{
+				ExternalID:  "42",
+				Title:       "Updated title",
+				Description: "New description",
+				Status:      model.TicketStatusClosed,
+			},
+			wantErr: false,
+		},
+		{
+			name: "clears labels when empty slice is passed",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if !assertAuthorization(t, w, r) {
+					return
+				}
+				if r.Method != http.MethodPatch {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				body, _ := io.ReadAll(r.Body)
+				var req struct {
+					Labels []string `json:"labels"`
+				}
+				if err := json.Unmarshal(body, &req); err != nil {
+					t.Errorf("failed to decode request body: %v", err)
+				}
+				if len(req.Labels) != 0 {
+					t.Errorf("request labels = %v, want empty slice", req.Labels)
+				}
+				sendJSON(w, http.StatusOK, githubIssue{})
+			},
+			input: &model.Ticket{
 				ExternalID: "42",
-				Title:      "Updated title",
-				Status:     model.TicketStatusClosed,
+				Labels:     []string{},
+				Status:     model.TicketStatusOpen,
 			},
 			wantErr: false,
 		},
@@ -544,7 +617,11 @@ func TestGitHubAdapter_ListTickets_Pagination(t *testing.T) {
 
 		switch pageCalls {
 		case 1:
-			// First page returns 1 issue and a Link header pointing to page 2.
+			// First page: must include state=all query param.
+			if r.URL.RawQuery != "state=all" {
+				t.Errorf("first page RawQuery = %q, want %q", r.URL.RawQuery, "state=all")
+			}
+			// Return 1 issue and a Link header pointing to page 2.
 			nextURL := fmt.Sprintf(`<%s/repos/test-owner/test-repo/issues?page=2>; rel="next"`, serverURL)
 			w.Header().Set("Link", nextURL)
 			sendJSON(w, http.StatusOK, []githubIssue{
@@ -555,6 +632,9 @@ func TestGitHubAdapter_ListTickets_Pagination(t *testing.T) {
 			})
 		case 2:
 			// Second page returns 2 issues and no Link header (last page).
+			if r.URL.RawQuery != "page=2" {
+				t.Errorf("second page RawQuery = %q, want %q", r.URL.RawQuery, "page=2")
+			}
 			sendJSON(w, http.StatusOK, []githubIssue{
 				{
 					ID: 2, Number: 2, Title: "Second issue",

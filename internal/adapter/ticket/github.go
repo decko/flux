@@ -19,6 +19,10 @@ import (
 // ErrRateLimited is returned when the GitHub API rate limit is exceeded.
 var ErrRateLimited = errors.New("rate limit exceeded")
 
+// maxPages is the maximum number of pages to follow when paginating
+// through the GitHub API. This prevents runaway pagination in edge cases.
+const maxPages = 100
+
 // ghLabel represents a label in the GitHub API response.
 type ghLabel struct {
 	Name string `json:"name"`
@@ -27,11 +31,12 @@ type ghLabel struct {
 // ghIssue represents an issue in the GitHub API response. Only fields
 // relevant to the adapter are included.
 type ghIssue struct {
-	Number int       `json:"number"`
-	Title  string    `json:"title"`
-	Body   string    `json:"body"`
-	State  string    `json:"state"`
-	Labels []ghLabel `json:"labels"`
+	Number      int       `json:"number"`
+	Title       string    `json:"title"`
+	Body        string    `json:"body"`
+	State       string    `json:"state"`
+	Labels      []ghLabel `json:"labels"`
+	PullRequest *struct{} `json:"pull_request,omitempty"`
 }
 
 // createIssueRequest is the JSON body for creating a GitHub issue.
@@ -43,8 +48,10 @@ type createIssueRequest struct {
 
 // updateIssueRequest is the JSON body for updating a GitHub issue.
 type updateIssueRequest struct {
-	State  string   `json:"state"`
-	Labels []string `json:"labels,omitempty"`
+	Title  string    `json:"title,omitempty"`
+	Body   string    `json:"body,omitempty"`
+	State  string    `json:"state"`
+	Labels *[]string `json:"labels,omitempty"`
 }
 
 // GitHubAdapter implements TicketAdapter for GitHub Issues.
@@ -63,7 +70,7 @@ type GitHubAdapterOption func(*GitHubAdapter)
 // httptest servers.
 func WithBaseURL(baseURL string) GitHubAdapterOption {
 	return func(a *GitHubAdapter) {
-		a.baseURL = baseURL
+		a.baseURL = strings.TrimRight(baseURL, "/")
 	}
 }
 
@@ -91,17 +98,23 @@ func (a *GitHubAdapter) Name() string {
 	return "github"
 }
 
-// ListTickets returns all GitHub issues for the repository.
+// ListTickets returns all GitHub issues for the repository, including
+// closed issues and excluding pull requests.
 func (a *GitHubAdapter) ListTickets(ctx context.Context, projectID string) ([]model.Ticket, error) {
 	var all []model.Ticket
-	url := a.issuesURL()
+	var pageCount int
+	url := a.issuesURL() + "?state=all"
 	for url != "" {
+		if pageCount >= maxPages {
+			return nil, fmt.Errorf("list tickets: exceeded maximum of %d pages", maxPages)
+		}
 		page, next, err := a.listPage(ctx, url)
 		if err != nil {
 			return nil, fmt.Errorf("list tickets: %w", err)
 		}
 		all = append(all, page...)
 		url = next
+		pageCount++
 	}
 	if all == nil {
 		return []model.Ticket{}, nil
@@ -177,8 +190,12 @@ func (a *GitHubAdapter) UpdateTicket(ctx context.Context, ticket *model.Ticket) 
 	}
 
 	body := updateIssueRequest{
-		State:  state,
-		Labels: ticket.Labels,
+		Title: ticket.Title,
+		Body:  ticket.Description,
+		State: state,
+	}
+	if ticket.Labels != nil {
+		body.Labels = &ticket.Labels
 	}
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -233,6 +250,7 @@ func (a *GitHubAdapter) doRequest(ctx context.Context, method, url string, body 
 	}
 	req.Header.Set("Authorization", "Bearer "+a.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "flux/0.1")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -279,9 +297,12 @@ func (a *GitHubAdapter) listPage(ctx context.Context, url string) ([]model.Ticke
 		return nil, "", fmt.Errorf("decode response: %w", err)
 	}
 
-	tickets := make([]model.Ticket, len(issues))
-	for i, issue := range issues {
-		tickets[i] = a.toTicket(issue)
+	tickets := make([]model.Ticket, 0, len(issues))
+	for _, issue := range issues {
+		if issue.PullRequest != nil {
+			continue
+		}
+		tickets = append(tickets, a.toTicket(issue))
 	}
 
 	nextURL := getNextPageURL(resp.Header.Get("Link"))
