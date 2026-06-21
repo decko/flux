@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -30,12 +31,29 @@ type LoggingConfig struct {
 	Level string `yaml:"level"`
 }
 
+// AdapterEntry configures a single external adapter integration
+// (e.g., a GitHub repository). Tokens/credentials are never stored
+// here; they are sourced from environment variables at adapter
+// construction time.
+type AdapterEntry struct {
+	Type  string `yaml:"type"`  // "github"
+	Owner string `yaml:"owner"` // repository owner
+	Repo  string `yaml:"repo"`  // repository name
+}
+
+// SyncConfig holds periodic sync settings.
+type SyncConfig struct {
+	Interval string `yaml:"interval"` // duration string, e.g. "5m", "30s"
+}
+
 // Config is the top-level configuration for the flux server.
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	Database DatabaseConfig `yaml:"database"`
 	CORS     CORSConfig     `yaml:"cors"`
 	Logging  LoggingConfig  `yaml:"logging"`
+	Adapters []AdapterEntry `yaml:"adapters"`
+	Sync     SyncConfig     `yaml:"sync"`
 }
 
 // Load reads configuration from a YAML file at path, applies defaults for zero-valued
@@ -71,6 +89,15 @@ func Load(path string) (*Config, error) {
 		cfg.Logging.Level = "info"
 	}
 
+	// Default sync interval
+	if cfg.Sync.Interval == "" {
+		cfg.Sync.Interval = "5m"
+	}
+	// Ensure Adapters is never nil
+	if cfg.Adapters == nil {
+		cfg.Adapters = []AdapterEntry{}
+	}
+
 	// Override with environment variables.
 	if v := os.Getenv("FLUX_SERVER_PORT"); v != "" {
 		port, err := strconv.Atoi(v)
@@ -103,6 +130,22 @@ func (c *Config) Validate() error {
 		// valid
 	default:
 		return fmt.Errorf("invalid log level %q, must be one of: debug, info, warn, error", c.Logging.Level)
+	}
+	for i, a := range c.Adapters {
+		switch a.Type {
+		case "github":
+			if a.Owner == "" {
+				return fmt.Errorf("adapters[%d]: owner is required for github adapter", i)
+			}
+			if a.Repo == "" {
+				return fmt.Errorf("adapters[%d]: repo is required for github adapter", i)
+			}
+		}
+	}
+	if c.Sync.Interval == "" {
+		c.Sync.Interval = "5m"
+	} else if _, err := time.ParseDuration(c.Sync.Interval); err != nil {
+		return fmt.Errorf("sync.interval %q is not a valid duration: %w", c.Sync.Interval, err)
 	}
 	return nil
 }
