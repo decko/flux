@@ -5,6 +5,7 @@ package scm
 import (
 	"context"
 
+	"github.com/decko/flux/internal/adapter"
 	"github.com/decko/flux/internal/model"
 )
 
@@ -27,3 +28,28 @@ type SCMAdapter interface {
 	// Health checks whether the external source is reachable and responsive.
 	Health(ctx context.Context) error
 }
+
+// StubSCMAdapter is a no-op stub that satisfies SCMAdapter.
+// Each method returns zero values or ErrNotImplemented.
+type StubSCMAdapter struct{}
+
+func (s *StubSCMAdapter) Name() string { return "test-stub" }
+
+func (s *StubSCMAdapter) ListPullRequests(ctx context.Context, projectID string) ([]model.PullRequest, error) {
+	return nil, adapter.ErrNotImplemented
+}
+
+func (s *StubSCMAdapter) GetPullRequest(ctx context.Context, projectID, externalID string) (*model.PullRequest, error) {
+	return nil, adapter.ErrNotImplemented
+}
+
+func (s *StubSCMAdapter) ListReviews(ctx context.Context, projectID, externalID string) ([]model.Review, error) {
+	return nil, adapter.ErrNotImplemented
+}
+
+func (s *StubSCMAdapter) Health(ctx context.Context) error {
+	return adapter.ErrNotImplemented
+}
+
+// Compile-time check: StubSCMAdapter satisfies SCMAdapter.
+var _ SCMAdapter = (*StubSCMAdapter)(nil)

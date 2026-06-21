@@ -139,9 +139,24 @@ type TicketAdapter interface {
     Name() string
     ListTickets(ctx context.Context, projectID string) ([]Ticket, error)
     GetTicket(ctx context.Context, projectID, externalID string) (*Ticket, error)
+    CreateTicket(ctx context.Context, ticket *Ticket) (*Ticket, error)
     UpdateTicket(ctx context.Context, ticket *Ticket) error
-    CreateTicket(ctx context.Context, ticket *Ticket) error
     SyncRelationships(ctx context.Context, projectID string) error
+    Health(ctx context.Context) error
+}
+```
+
+### SCM Adapter
+
+Reads pull requests and reviews from source code management systems.
+
+```go
+type SCMAdapter interface {
+    Name() string
+    ListPullRequests(ctx context.Context, projectID string) ([]PullRequest, error)
+    GetPullRequest(ctx context.Context, projectID, externalID string) (*PullRequest, error)
+    ListReviews(ctx context.Context, projectID, externalID string) ([]Review, error)
+    Health(ctx context.Context) error
 }
 ```
 
