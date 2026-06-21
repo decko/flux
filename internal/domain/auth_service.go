@@ -122,7 +122,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, tokenString string) (str
 
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return "", fmt.Errorf("refresh token: user not found")
+		return "", fmt.Errorf("refresh token: %w", err)
 	}
 
 	token, err := s.generateToken(user)
