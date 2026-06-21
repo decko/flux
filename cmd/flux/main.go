@@ -74,6 +74,16 @@ func run() error {
 	return nil
 }
 
+// jwtSecret returns the JWT signing key from the JWT_SECRET environment
+// variable, or a development fallback if not set.
+func jwtSecret() []byte {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = "dev-secret"
+	}
+	return []byte(secret)
+}
+
 // setupLogging configures the default slog logger with the given level.
 func setupLogging(level string) {
 	var slogLevel slog.Level
@@ -108,6 +118,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	ticketRepo := repository.NewSQLiteTicketRepository(db)
 	prRepo := repository.NewSQLitePullRequestRepository(db)
 	pipelineRepo := repository.NewSQLitePipelineRunRepository(db)
+	userRepo := repository.NewSQLiteUserRepository(db)
 
 	if err := projectRepo.Migrate(ctx); err != nil {
 		_ = db.Close()
@@ -125,11 +136,16 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("migrate pipeline runs: %w", err)
 	}
+	if err := userRepo.Migrate(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("migrate users: %w", err)
+	}
 
 	projectSvc := domain.NewProjectService(projectRepo)
 	ticketSvc := domain.NewTicketService(ticketRepo)
 	prSvc := domain.NewPullRequestService(prRepo)
 	pipelineSvc := domain.NewPipelineRunService(pipelineRepo)
+	authSvc := domain.NewAuthService(userRepo, jwtSecret())
 
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
@@ -137,6 +153,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithTicketService(ticketSvc),
 		api.WithPRService(prSvc),
 		api.WithPipelineService(pipelineSvc),
+		api.WithAuthService(authSvc),
 		api.WithSPA(),
 	)
 

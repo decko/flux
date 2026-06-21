@@ -19,6 +19,10 @@ import (
 // ErrNotFound is returned when a requested entity does not exist.
 var ErrNotFound = errors.New("not found")
 
+// ErrDuplicateEmail is returned when attempting to create a user with an
+// email that already exists in the store.
+var ErrDuplicateEmail = errors.New("email already exists")
+
 // ProjectFilter defines criteria for listing projects.
 // Currently empty; extensible for future filtering needs.
 type ProjectFilter struct{}
@@ -135,4 +139,19 @@ type PipelineRunRepository interface {
 	// Update modifies an existing pipeline run. Returns ErrNotFound if no
 	// run with the run's ID exists.
 	Update(ctx context.Context, run model.PipelineRun) error
+}
+
+// UserRepository defines the contract for user persistence.
+type UserRepository interface {
+	// Create persists a new user. Returns ErrDuplicateEmail if a user with
+	// the same email already exists.
+	Create(ctx context.Context, user model.User) error
+
+	// GetByEmail retrieves a user by email. Returns ErrNotFound if no user
+	// with the given email exists.
+	GetByEmail(ctx context.Context, email string) (model.User, error)
+
+	// GetByID retrieves a user by ID. Returns ErrNotFound if no user
+	// with the given ID exists.
+	GetByID(ctx context.Context, id string) (model.User, error)
 }

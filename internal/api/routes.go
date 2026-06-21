@@ -34,6 +34,10 @@ func (s *Server) registerRoutes() {
 		r.Get("/pipeline-runs", s.handleListPipelineRuns)
 		r.Post("/pipeline-runs", s.handleCreatePipelineRun)
 		r.Get("/pipeline-runs/{id}", s.handleGetPipelineRun)
+
+		r.Post("/auth/register", s.handleRegister)
+		r.Post("/auth/login", s.handleLogin)
+		r.Post("/auth/refresh", s.handleRefresh)
 	})
 
 	if s.serveSPA {
