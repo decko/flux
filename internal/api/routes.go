@@ -28,5 +28,9 @@ func (s *Server) registerRoutes() {
 		r.Get("/pull-requests", s.handleListPRs)
 		r.Get("/pull-requests/{id}", s.handleGetPR)
 		r.Put("/pull-requests/{id}", s.handleUpdatePR)
+
+		r.Get("/pipeline-runs", s.handleListPipelineRuns)
+		r.Post("/pipeline-runs", s.handleCreatePipelineRun)
+		r.Get("/pipeline-runs/{id}", s.handleGetPipelineRun)
 	})
 }
