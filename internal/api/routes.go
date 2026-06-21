@@ -15,10 +15,10 @@ func (s *Server) registerRoutes() {
 	})
 
 	s.router.Route("/api/v1", func(r chi.Router) {
-		r.Get("/projects", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("[]"))
-		})
+		r.Post("/projects", s.handleCreateProject)
+		r.Get("/projects", s.handleListProjects)
+		r.Get("/projects/{id}", s.handleGetProject)
+		r.Put("/projects/{id}", s.handleUpdateProject)
+		r.Delete("/projects/{id}", s.handleDeleteProject)
 	})
 }
