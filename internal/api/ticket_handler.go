@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -22,23 +21,6 @@ type ticketPage struct {
 	Page  int            `json:"page"`
 	Limit int            `json:"limit"`
 	Total int            `json:"total"`
-}
-
-// ticketServiceError maps ticket service errors to HTTP status codes and messages.
-// Validation errors from model.Validate() are returned unwrapped by the service → 400.
-// ErrNotFound (via errors.Is) → 404.
-// All other errors (wrapped repository errors) → 500 and are logged.
-func ticketServiceError(err error) (int, string) {
-	if errors.Is(err, repository.ErrNotFound) {
-		return http.StatusNotFound, "Not Found"
-	}
-	// Validation errors are returned unwrapped by the service; repo errors are wrapped.
-	// We use a heuristic to distinguish them: validation messages contain known phrases.
-	msg := err.Error()
-	if strings.Contains(msg, "is required") || strings.Contains(msg, "invalid ") {
-		return http.StatusBadRequest, msg
-	}
-	return http.StatusInternalServerError, "Internal Server Error"
 }
 
 // handleListTickets handles GET /api/v1/tickets.
@@ -79,7 +61,7 @@ func (s *Server) handleListTickets(w http.ResponseWriter, r *http.Request) {
 
 	tickets, err := s.ticketSvc.List(r.Context(), filter)
 	if err != nil {
-		code, msg := ticketServiceError(err)
+		code, msg := serviceError(err)
 		if code == http.StatusInternalServerError {
 			slog.Error("list tickets", "error", err, "request_id", middleware.GetReqID(r.Context()))
 		}
@@ -127,7 +109,7 @@ func (s *Server) handleGetTicket(w http.ResponseWriter, r *http.Request) {
 
 	ticket, err := s.ticketSvc.Get(r.Context(), id)
 	if err != nil {
-		code, msg := ticketServiceError(err)
+		code, msg := serviceError(err)
 		if code == http.StatusInternalServerError {
 			slog.Error("get ticket", "error", err, "request_id", middleware.GetReqID(r.Context()))
 		}
@@ -162,7 +144,7 @@ func (s *Server) handleUpdateTicket(w http.ResponseWriter, r *http.Request) {
 	t.UpdatedAt = time.Now().UTC()
 
 	if err := s.ticketSvc.Update(r.Context(), t); err != nil {
-		code, msg := ticketServiceError(err)
+		code, msg := serviceError(err)
 		if code == http.StatusInternalServerError {
 			slog.Error("update ticket", "error", err, "request_id", middleware.GetReqID(r.Context()))
 		}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,23 +14,6 @@ import (
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
-
-// projectServiceError maps project service errors to HTTP status codes and messages.
-// Validation errors from model.Validate() are returned unwrapped by the service → 400.
-// ErrNotFound (via errors.Is) → 404.
-// All other errors (wrapped repository errors) → 500 and are logged.
-func projectServiceError(err error) (int, string) {
-	if errors.Is(err, repository.ErrNotFound) {
-		return http.StatusNotFound, "Not Found"
-	}
-	// Validation errors are returned unwrapped by the service; repo errors are wrapped.
-	// We use a heuristic to distinguish them: validation messages contain known phrases.
-	msg := err.Error()
-	if strings.Contains(msg, "is required") || strings.Contains(msg, "invalid ") {
-		return http.StatusBadRequest, msg
-	}
-	return http.StatusInternalServerError, "Internal Server Error"
-}
 
 // handleCreateProject handles POST /api/v1/projects.
 // It decodes a Project from the JSON body, generates an ID and timestamps,
@@ -50,7 +32,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	p.UpdatedAt = now
 
 	if err := s.projectSvc.Create(r.Context(), p); err != nil {
-		code, msg := projectServiceError(err)
+		code, msg := serviceError(err)
 		if code == http.StatusInternalServerError {
 			slog.Error("create project", "error", err, "request_id", middleware.GetReqID(r.Context()))
 		}
@@ -122,7 +104,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	p.UpdatedAt = time.Now().UTC()
 
 	if err := s.projectSvc.Update(r.Context(), p); err != nil {
-		code, msg := projectServiceError(err)
+		code, msg := serviceError(err)
 		if code == http.StatusInternalServerError {
 			slog.Error("update project", "error", err, "request_id", middleware.GetReqID(r.Context()))
 		}
