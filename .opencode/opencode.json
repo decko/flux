@@ -17,7 +17,7 @@
       }
     },
     "feature-intake": {
-      "model": "opencode-go/qwen3.7-max",
+      "model": "opencode-go/qwen3.7-plus",
       "mode": "subagent",
       "permission": {
         "lsp": "allow"
@@ -31,7 +31,7 @@
       }
     },
     "go-reviewer": {
-      "model": "opencode-go/qwen3.7-max",
+      "model": "opencode-go/qwen3.7-plus",
       "permission": {
         "lsp": "allow"
       }
@@ -55,7 +55,7 @@
       }
     },
     "go-architect": {
-      "model": "opencode-go/kimi-k2.6",
+      "model": "opencode-go/qwen3.7-plus",
       "permission": {
         "lsp": "allow"
       }
@@ -68,7 +68,7 @@
       }
     },
     "frontend-reviewer": {
-      "model": "opencode-go/qwen3.7-max",
+      "model": "opencode-go/qwen3.7-plus",
       "permission": {
         "lsp": "allow"
       }
@@ -89,7 +89,7 @@
     },
     "senior-qe": {
       "model": "deepseek/deepseek-v4-pro",
-      "variant": "high",
+      "variant": "max",
       "mode": "subagent",
       "permission": {
         "lsp": "allow"
