@@ -113,3 +113,25 @@ func TestWithoutSPA_RootReturns404(t *testing.T) {
 		t.Errorf("got status %d, want %d for / without SPA", resp.StatusCode, http.StatusNotFound)
 	}
 }
+
+func TestSPA_APIRoutesReturnJSON404(t *testing.T) {
+	srv := NewServer(WithSPA())
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/nonexistent", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/nonexistent: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if ct != "application/json" {
+		t.Errorf("got Content-Type %q, want application/json", ct)
+	}
+}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"io/fs"
 	"net/http"
 	"strings"
 
@@ -49,6 +50,7 @@ func (s *Server) registerRoutes() {
 // API routes under /api/v1 and /health are registered first and take precedence.
 func (s *Server) registerSPARoutes() {
 	fsys := spaFilesystem()
+	subFS := spaFS()
 	fileServer := http.FileServer(fsys)
 
 	s.router.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +62,7 @@ func (s *Server) registerSPARoutes() {
 
 		// If the file exists in the embedded FS, serve it directly.
 		// Otherwise, fall back to index.html for client-side routing.
-		if _, err := fsys.Open(cleanPath); err != nil {
+		if _, err := fs.Stat(subFS, cleanPath); err != nil {
 			// SPA fallback: rewrite URL to root and serve index.html.
 			r.URL.Path = "/"
 			fileServer.ServeHTTP(w, r)
