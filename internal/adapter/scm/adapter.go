@@ -4,6 +4,7 @@ package scm
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/decko/flux/internal/adapter"
 	"github.com/decko/flux/internal/model"
@@ -55,3 +56,29 @@ func (s *StubSCMAdapter) Health(ctx context.Context) error {
 
 // Compile-time check: StubSCMAdapter satisfies SCMAdapter.
 var _ SCMAdapter = (*StubSCMAdapter)(nil)
+
+// GitHubSCMAdapter implements SCMAdapter for the GitHub REST API v3.
+type GitHubSCMAdapter struct {
+	owner      string
+	repo       string
+	token      string
+	httpClient *http.Client
+	baseURL    string
+}
+
+// NewGitHubAdapter creates a new GitHubSCMAdapter.
+func NewGitHubAdapter(owner, repo, token string, httpClient *http.Client) *GitHubSCMAdapter {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	return &GitHubSCMAdapter{
+		owner:      owner,
+		repo:       repo,
+		token:      token,
+		httpClient: httpClient,
+		baseURL:    "https://api.github.com",
+	}
+}
+
+// Name returns "github".
+func (a *GitHubSCMAdapter) Name() string { return "github" }
