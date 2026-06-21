@@ -1,23 +1,14 @@
-# Flux configuration example
-# Copy to flux.yaml and fill in your values.
+# Flux configuration
+# Copy to flux.yaml and customize for your environment.
 
 server:
-  host: 0.0.0.0
   port: 8080
 
 database:
-  driver: sqlite
-  dsn: ./flux.db
+  path: flux.db
 
-auth:
-  jwt_secret: ${FLUX_JWT_SECRET}
+cors:
+  origin: "*"
 
-projects:
-  - name: my-project
-    repo: https://github.com/user/repo
-    adapters:
-      - type: github
-        token: ${GITHUB_TOKEN}
-    orchestrators:
-      - type: soda
-        path: ./soda.yaml
+logging:
+  level: info
