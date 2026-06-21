@@ -20,5 +20,9 @@ func (s *Server) registerRoutes() {
 		r.Get("/projects/{id}", s.handleGetProject)
 		r.Put("/projects/{id}", s.handleUpdateProject)
 		r.Delete("/projects/{id}", s.handleDeleteProject)
+
+		r.Get("/tickets", s.handleListTickets)
+		r.Get("/tickets/{id}", s.handleGetTicket)
+		r.Put("/tickets/{id}", s.handleUpdateTicket)
 	})
 }

@@ -17,6 +17,7 @@ type Server struct {
 	router     *chi.Mux
 	corsOrigin string
 	projectSvc *domain.ProjectService
+	ticketSvc  *domain.TicketService
 }
 
 // ServerOption configures a Server.
@@ -35,6 +36,13 @@ func WithCORSOrigin(origin string) ServerOption {
 func WithProjectService(svc *domain.ProjectService) ServerOption {
 	return func(s *Server) {
 		s.projectSvc = svc
+	}
+}
+
+// WithTicketService injects the ticket service for ticket endpoints.
+func WithTicketService(svc *domain.TicketService) ServerOption {
+	return func(s *Server) {
+		s.ticketSvc = svc
 	}
 }
 
