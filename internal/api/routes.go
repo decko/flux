@@ -24,5 +24,9 @@ func (s *Server) registerRoutes() {
 		r.Get("/tickets", s.handleListTickets)
 		r.Get("/tickets/{id}", s.handleGetTicket)
 		r.Put("/tickets/{id}", s.handleUpdateTicket)
+
+		r.Get("/pull-requests", s.handleListPRs)
+		r.Get("/pull-requests/{id}", s.handleGetPR)
+		r.Put("/pull-requests/{id}", s.handleUpdatePR)
 	})
 }
