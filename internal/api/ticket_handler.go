@@ -127,11 +127,11 @@ func (s *Server) handleGetTicket(w http.ResponseWriter, r *http.Request) {
 
 	ticket, err := s.ticketSvc.Get(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "Not Found", middleware.GetReqID(r.Context()))
-			return
+		code, msg := ticketServiceError(err)
+		if code == http.StatusInternalServerError {
+			slog.Error("get ticket", "error", err, "request_id", middleware.GetReqID(r.Context()))
 		}
-		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error", middleware.GetReqID(r.Context()))
+		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
 		return
 	}
 
@@ -170,7 +170,15 @@ func (s *Server) handleUpdateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Re-fetch to return the persisted state with correct timestamps.
+	persisted, err := s.ticketSvc.Get(r.Context(), id)
+	if err != nil {
+		slog.Error("re-fetch after update ticket", "error", err, "request_id", middleware.GetReqID(r.Context()))
+		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error", middleware.GetReqID(r.Context()))
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(t)
+	_ = json.NewEncoder(w).Encode(persisted)
 }
