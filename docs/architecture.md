@@ -28,6 +28,7 @@ Flux is a web-based control plane for agentic software development lifecycle. It
 ├─────────────────────────────────────────────────────────────┤
 │  Adapter Layer                                               │
 │  ├── Ticket Adapters (GitHub, Jira, Linear)                 │
+│  ├── SCM Adapters (GitHub, GitLab)                          │
 │  ├── Orchestrator Adapters (soda, custom)                   │
 │  └── Agent Workers (JSON-RPC, local/remote)                 │
 ├─────────────────────────────────────────────────────────────┤
@@ -317,6 +318,7 @@ flux/
 │   ├── model/             # Domain types (Project, Ticket, etc.)
 │   ├── adapter/
 │   │   ├── ticket/        # GitHub, Jira adapters
+│   │   ├── scm/           # SCM adapters (GitHub, GitLab)
 │   │   └── orchestrator/  # soda adapter
 │   ├── repository/        # SQLite implementations
 │   ├── agent/             # Agent worker client/server

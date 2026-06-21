@@ -90,10 +90,10 @@ func TestStubSatisfiesTicketAdapter(t *testing.T) {
 		},
 	}
 
-	adapter := &StubTicketAdapter{}
+	stub := &StubTicketAdapter{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.run(t, adapter)
+			tt.run(t, stub)
 		})
 	}
 }
