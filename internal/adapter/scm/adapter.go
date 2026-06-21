@@ -17,6 +17,8 @@ type SCMAdapter interface {
 	Name() string
 
 	// ListPullRequests returns all pull requests for the given project.
+	// The Reviews field of each PullRequest is not populated; use
+	// ListReviews to retrieve review data for a specific pull request.
 	ListPullRequests(ctx context.Context, projectID string) ([]model.PullRequest, error)
 
 	// GetPullRequest retrieves a single pull request by its external ID.
