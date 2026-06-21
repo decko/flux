@@ -40,7 +40,7 @@ func setupTicketServer(t *testing.T) (*Server, func(t *testing.T, tkt model.Tick
 	}
 
 	svc := domain.NewTicketService(repo)
-	srv := NewServer(WithTicketService(svc))
+	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithTicketService(svc))
 
 	seed := func(t *testing.T, tkt model.Ticket) model.Ticket {
 		t.Helper()
@@ -67,7 +67,7 @@ func TestListTickets(t *testing.T) {
 		ts := httptest.NewServer(srv)
 		defer ts.Close()
 
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/tickets", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/tickets", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets: %v", err)
@@ -111,7 +111,7 @@ func TestListTickets(t *testing.T) {
 			Source: model.TicketSourceJira, Status: model.TicketStatusClosed,
 		})
 
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/tickets", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/tickets", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets: %v", err)
@@ -147,7 +147,7 @@ func TestListTickets(t *testing.T) {
 		})
 
 		u := ts.URL + "/api/v1/tickets?project_id=proj-1"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets?project_id=proj-1: %v", err)
@@ -183,7 +183,7 @@ func TestListTickets(t *testing.T) {
 		})
 
 		u := ts.URL + "/api/v1/tickets?status=open"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets?status=open: %v", err)
@@ -226,7 +226,7 @@ func TestListTickets(t *testing.T) {
 		})
 
 		u := ts.URL + "/api/v1/tickets?labels=bug,feature"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets?labels=bug,feature: %v", err)
@@ -256,7 +256,7 @@ func TestListTickets(t *testing.T) {
 			})
 		}
 
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/tickets", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/tickets", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets: %v", err)
@@ -296,7 +296,7 @@ func TestListTickets(t *testing.T) {
 		}
 
 		u := ts.URL + "/api/v1/tickets?page=2&limit=10"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets?page=2&limit=10: %v", err)
@@ -331,7 +331,7 @@ func TestListTickets(t *testing.T) {
 		for _, pageVal := range []string{"0", "-1"} {
 			t.Run("page="+pageVal, func(t *testing.T) {
 				u := ts.URL + "/api/v1/tickets?page=" + pageVal
-				req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+				req := authedRequest(http.MethodGet, u, nil)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					t.Fatalf("GET /api/v1/tickets?page=%s: %v", pageVal, err)
@@ -353,7 +353,7 @@ func TestListTickets(t *testing.T) {
 		for _, limitVal := range []string{"0", "101"} {
 			t.Run("limit="+limitVal, func(t *testing.T) {
 				u := ts.URL + "/api/v1/tickets?limit=" + limitVal
-				req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+				req := authedRequest(http.MethodGet, u, nil)
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					t.Fatalf("GET /api/v1/tickets?limit=%s: %v", limitVal, err)
@@ -382,7 +382,7 @@ func TestGetTicket(t *testing.T) {
 		})
 
 		u := fmt.Sprintf("%s/api/v1/tickets/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets/%s: %v", orig.ID, err)
@@ -413,7 +413,7 @@ func TestGetTicket(t *testing.T) {
 
 		id := uuid.NewString()
 		u := fmt.Sprintf("%s/api/v1/tickets/%s", ts.URL, id)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/tickets/%s: %v", id, err)
@@ -447,7 +447,7 @@ func TestUpdateTicket(t *testing.T) {
 
 		body := fmt.Sprintf(`{"id":%q,"title":"Updated","project_id":"proj-1","source":"github","status":"closed"}`, orig.ID)
 		u := fmt.Sprintf("%s/api/v1/tickets/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -477,7 +477,7 @@ func TestUpdateTicket(t *testing.T) {
 		id := uuid.NewString()
 		body := fmt.Sprintf(`{"id":%q,"title":"Ghost","project_id":"proj-1","source":"github","status":"open"}`, id)
 		u := fmt.Sprintf("%s/api/v1/tickets/%s", ts.URL, id)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -502,7 +502,7 @@ func TestUpdateTicket(t *testing.T) {
 
 		body := fmt.Sprintf(`{"id":%q,"project_id":"proj-1","source":"github","status":"open"}`, orig.ID)
 		u := fmt.Sprintf("%s/api/v1/tickets/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -533,7 +533,7 @@ func TestUpdateTicket(t *testing.T) {
 
 		body := fmt.Sprintf(`{"id":%q,"title":"Bad","project_id":"proj-1","source":"github","status":"bogus"}`, orig.ID)
 		u := fmt.Sprintf("%s/api/v1/tickets/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -559,7 +559,7 @@ func TestUpdateTicket(t *testing.T) {
 		otherID := uuid.NewString()
 		body := fmt.Sprintf(`{"id":%q,"title":"Mismatched","project_id":"proj-1","source":"github","status":"open"}`, otherID)
 		u := fmt.Sprintf("%s/api/v1/tickets/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -597,7 +597,7 @@ func TestTicketMethodNotAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequestWithContext(context.Background(), tt.method, ts.URL+tt.path, nil)
+			req := authedRequest(tt.method, ts.URL+tt.path, nil)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatalf("%s %s: %v", tt.method, tt.path, err)

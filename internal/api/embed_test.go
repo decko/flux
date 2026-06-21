@@ -115,11 +115,11 @@ func TestWithoutSPA_RootReturns404(t *testing.T) {
 }
 
 func TestSPA_APIRoutesReturnJSON404(t *testing.T) {
-	srv := NewServer(WithSPA())
+	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithSPA())
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/nonexistent", nil)
+	req := authedRequest(http.MethodGet, ts.URL+"/api/v1/nonexistent", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /api/v1/nonexistent: %v", err)

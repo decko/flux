@@ -40,7 +40,7 @@ func setupPipelineServer(t *testing.T) (*Server, func(t *testing.T, run model.Pi
 	}
 
 	svc := domain.NewPipelineRunService(repo)
-	srv := NewServer(WithPipelineService(svc))
+	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPipelineService(svc))
 
 	seed := func(t *testing.T, run model.PipelineRun) model.PipelineRun {
 		t.Helper()
@@ -70,7 +70,7 @@ func TestListPipelineRuns(t *testing.T) {
 		ts := httptest.NewServer(srv)
 		defer ts.Close()
 
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/pipeline-runs", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/pipeline-runs", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pipeline-runs: %v", err)
@@ -111,7 +111,7 @@ func TestListPipelineRuns(t *testing.T) {
 			Status:       model.RunStatusCompleted,
 		})
 
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/pipeline-runs", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/pipeline-runs", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pipeline-runs: %v", err)
@@ -150,7 +150,7 @@ func TestListPipelineRuns(t *testing.T) {
 		})
 
 		u := ts.URL + "/api/v1/pipeline-runs?project_id=proj-1"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pipeline-runs?project_id=proj-1: %v", err)
@@ -192,7 +192,7 @@ func TestListPipelineRuns(t *testing.T) {
 		})
 
 		u := ts.URL + "/api/v1/pipeline-runs?ticket_id=ticket-1"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pipeline-runs?ticket_id=ticket-1: %v", err)
@@ -234,7 +234,7 @@ func TestListPipelineRuns(t *testing.T) {
 		})
 
 		u := ts.URL + "/api/v1/pipeline-runs?status=pending"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pipeline-runs?status=pending: %v", err)
@@ -273,7 +273,7 @@ func TestGetPipelineRun(t *testing.T) {
 		})
 
 		u := fmt.Sprintf("%s/api/v1/pipeline-runs/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pipeline-runs/%s: %v", orig.ID, err)
@@ -310,7 +310,7 @@ func TestGetPipelineRun(t *testing.T) {
 
 		id := uuid.NewString()
 		u := fmt.Sprintf("%s/api/v1/pipeline-runs/%s", ts.URL, id)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pipeline-runs/%s: %v", id, err)
@@ -348,7 +348,7 @@ func TestCreatePipelineRun(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		body := pipelineRunRequestBody("proj-1", "ticket-1", "soda", "plan", "")
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -392,7 +392,7 @@ func TestCreatePipelineRun(t *testing.T) {
 
 	t.Run("missing project_id", func(t *testing.T) {
 		body := `{"ticket_id":"ticket-1","orchestrator":"soda","pipeline":"plan"}`
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -414,7 +414,7 @@ func TestCreatePipelineRun(t *testing.T) {
 
 	t.Run("missing ticket_id", func(t *testing.T) {
 		body := `{"project_id":"proj-1","orchestrator":"soda","pipeline":"plan"}`
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -436,7 +436,7 @@ func TestCreatePipelineRun(t *testing.T) {
 
 	t.Run("invalid status", func(t *testing.T) {
 		body := `{"project_id":"proj-1","ticket_id":"ticket-1","orchestrator":"soda","pipeline":"plan","status":"bogus"}`
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -458,7 +458,7 @@ func TestCreatePipelineRun(t *testing.T) {
 
 	t.Run("malformed JSON", func(t *testing.T) {
 		body := `{bad json}`
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -499,7 +499,7 @@ func TestPipelineRunMethodNotAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequestWithContext(context.Background(), tt.method, ts.URL+tt.path, nil)
+			req := authedRequest(tt.method, ts.URL+tt.path, nil)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatalf("%s %s: %v", tt.method, tt.path, err)

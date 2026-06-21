@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -74,6 +75,24 @@ func run() error {
 	return nil
 }
 
+// jwtSecret returns the JWT signing key from the JWT_SECRET environment
+// variable, or a development fallback if not set.
+// It terminates the process if the secret is shorter than 16 characters,
+// as short secrets are a security risk. The dev fallback "dev-secret"
+// is intentionally short to fail closed in production; set JWT_SECRET
+// to a value of at least 16 characters.
+// Tests may set NO_AUTH=1 to bypass the check.
+func jwtSecret() []byte {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = "dev-secret"
+	}
+	if len(secret) < 16 && os.Getenv("NO_AUTH") != "1" {
+		log.Fatalf("JWT_SECRET must be at least 16 characters (got %d)", len(secret))
+	}
+	return []byte(secret)
+}
+
 // setupLogging configures the default slog logger with the given level.
 func setupLogging(level string) {
 	var slogLevel slog.Level
@@ -108,6 +127,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	ticketRepo := repository.NewSQLiteTicketRepository(db)
 	prRepo := repository.NewSQLitePullRequestRepository(db)
 	pipelineRepo := repository.NewSQLitePipelineRunRepository(db)
+	userRepo := repository.NewSQLiteUserRepository(db)
 
 	if err := projectRepo.Migrate(ctx); err != nil {
 		_ = db.Close()
@@ -125,18 +145,26 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("migrate pipeline runs: %w", err)
 	}
+	if err := userRepo.Migrate(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("migrate users: %w", err)
+	}
 
 	projectSvc := domain.NewProjectService(projectRepo)
 	ticketSvc := domain.NewTicketService(ticketRepo)
 	prSvc := domain.NewPullRequestService(prRepo)
 	pipelineSvc := domain.NewPipelineRunService(pipelineRepo)
+	jwtSecret := jwtSecret()
+	authSvc := domain.NewAuthService(userRepo, jwtSecret)
 
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
+		api.WithJWTSecret(jwtSecret),
 		api.WithProjectService(projectSvc),
 		api.WithTicketService(ticketSvc),
 		api.WithPRService(prSvc),
 		api.WithPipelineService(pipelineSvc),
+		api.WithAuthService(authSvc),
 		api.WithSPA(),
 	)
 

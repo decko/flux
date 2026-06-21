@@ -40,7 +40,7 @@ func setupPRServer(t *testing.T) (*Server, func(t *testing.T, pr model.PullReque
 	}
 
 	svc := domain.NewPullRequestService(repo)
-	srv := NewServer(WithPRService(svc))
+	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPRService(svc))
 
 	seed := func(t *testing.T, pr model.PullRequest) model.PullRequest {
 		t.Helper()
@@ -67,7 +67,7 @@ func TestListPRs(t *testing.T) {
 		ts := httptest.NewServer(srv)
 		defer ts.Close()
 
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/pull-requests", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/pull-requests", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pull-requests: %v", err)
@@ -104,7 +104,7 @@ func TestListPRs(t *testing.T) {
 			URL: "https://gitlab.com/example/repo/merge/2",
 		})
 
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/pull-requests", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/pull-requests", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pull-requests: %v", err)
@@ -139,7 +139,7 @@ func TestListPRs(t *testing.T) {
 		})
 
 		u := ts.URL + "/api/v1/pull-requests?project_id=proj-1"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pull-requests?project_id=proj-1: %v", err)
@@ -177,7 +177,7 @@ func TestListPRs(t *testing.T) {
 		})
 
 		u := ts.URL + "/api/v1/pull-requests?status=open"
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pull-requests?status=open: %v", err)
@@ -214,7 +214,7 @@ func TestGetPR(t *testing.T) {
 		})
 
 		u := fmt.Sprintf("%s/api/v1/pull-requests/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pull-requests/%s: %v", orig.ID, err)
@@ -245,7 +245,7 @@ func TestGetPR(t *testing.T) {
 
 		id := uuid.NewString()
 		u := fmt.Sprintf("%s/api/v1/pull-requests/%s", ts.URL, id)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/pull-requests/%s: %v", id, err)
@@ -280,7 +280,7 @@ func TestUpdatePR(t *testing.T) {
 
 		body := fmt.Sprintf(`{"id":%q,"title":"Updated","project_id":"proj-1","source":"github","status":"merged","url":"https://github.com/example/repo/pull/99"}`, orig.ID)
 		u := fmt.Sprintf("%s/api/v1/pull-requests/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -310,7 +310,7 @@ func TestUpdatePR(t *testing.T) {
 		id := uuid.NewString()
 		body := fmt.Sprintf(`{"id":%q,"title":"Ghost","project_id":"proj-1","source":"github","status":"open","url":"https://github.com/example/repo/pull/404"}`, id)
 		u := fmt.Sprintf("%s/api/v1/pull-requests/%s", ts.URL, id)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -336,7 +336,7 @@ func TestUpdatePR(t *testing.T) {
 
 		body := fmt.Sprintf(`{"id":%q,"project_id":"proj-1","source":"github","status":"open","url":"https://github.com/example/repo/pull/1"}`, orig.ID)
 		u := fmt.Sprintf("%s/api/v1/pull-requests/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -368,7 +368,7 @@ func TestUpdatePR(t *testing.T) {
 
 		body := fmt.Sprintf(`{"id":%q,"title":"Bad","project_id":"proj-1","source":"github","status":"bogus","url":"https://github.com/example/repo/pull/1"}`, orig.ID)
 		u := fmt.Sprintf("%s/api/v1/pull-requests/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -395,7 +395,7 @@ func TestUpdatePR(t *testing.T) {
 		otherID := uuid.NewString()
 		body := fmt.Sprintf(`{"id":%q,"title":"Mismatched","project_id":"proj-1","source":"github","status":"open","url":"https://github.com/example/repo/pull/1"}`, otherID)
 		u := fmt.Sprintf("%s/api/v1/pull-requests/%s", ts.URL, orig.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(body))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -433,7 +433,7 @@ func TestPRMethodNotAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequestWithContext(context.Background(), tt.method, ts.URL+tt.path, nil)
+			req := authedRequest(tt.method, ts.URL+tt.path, nil)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatalf("%s %s: %v", tt.method, tt.path, err)

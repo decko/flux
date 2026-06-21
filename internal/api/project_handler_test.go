@@ -39,7 +39,7 @@ func setupProjectServer(t *testing.T) *Server {
 	}
 
 	svc := domain.NewProjectService(repo)
-	return NewServer(WithProjectService(svc))
+	return NewServer(WithJWTSecret(testJWTSecretBytes), WithProjectService(svc))
 }
 
 // projectRequestBody builds a JSON request body with the given name and repo URL.
@@ -68,7 +68,7 @@ func TestCreateProject(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		body := projectRequestBody("test-project", "https://github.com/example/test")
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -106,7 +106,7 @@ func TestCreateProject(t *testing.T) {
 
 	t.Run("missing name", func(t *testing.T) {
 		body := `{"repo_url": "https://github.com/example/test"}`
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -128,7 +128,7 @@ func TestCreateProject(t *testing.T) {
 
 	t.Run("missing repo_url", func(t *testing.T) {
 		body := `{"name": "test-project"}`
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -150,7 +150,7 @@ func TestCreateProject(t *testing.T) {
 
 	t.Run("malformed JSON", func(t *testing.T) {
 		body := `{bad json}`
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -181,7 +181,7 @@ func TestGetProject(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		// First create a project.
 		body := projectRequestBody("get-test", "https://github.com/example/get-test")
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -193,7 +193,7 @@ func TestGetProject(t *testing.T) {
 
 		// GET by ID.
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, created.ID)
-		req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req = authedRequest(http.MethodGet, u, nil)
 		resp, err = http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/projects/%s: %v", created.ID, err)
@@ -220,7 +220,7 @@ func TestGetProject(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		id := uuid.NewString()
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, id)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req := authedRequest(http.MethodGet, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/projects/%s: %v", id, err)
@@ -247,7 +247,7 @@ func TestListProjects(t *testing.T) {
 	defer ts.Close()
 
 	t.Run("empty list", func(t *testing.T) {
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/projects", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/projects", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/projects: %v", err)
@@ -268,7 +268,7 @@ func TestListProjects(t *testing.T) {
 	t.Run("list with items", func(t *testing.T) {
 		for _, name := range []string{"proj-a", "proj-b"} {
 			body := projectRequestBody(name, fmt.Sprintf("https://github.com/example/%s", name))
-			req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+			req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
@@ -277,7 +277,7 @@ func TestListProjects(t *testing.T) {
 			_ = resp.Body.Close()
 		}
 
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/projects", nil)
+		req := authedRequest(http.MethodGet, ts.URL+"/api/v1/projects", nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET /api/v1/projects: %v", err)
@@ -317,7 +317,7 @@ func TestUpdateProject(t *testing.T) {
 	createProject := func(t *testing.T, name, repoURL string) model.Project {
 		t.Helper()
 		body := projectRequestBody(name, repoURL)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -334,7 +334,7 @@ func TestUpdateProject(t *testing.T) {
 
 		updateBody := fmt.Sprintf(`{"id":%q,"name":"updated-name","repo_url":"https://github.com/example/updated"}`, p.ID)
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, p.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(updateBody))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(updateBody))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -360,7 +360,7 @@ func TestUpdateProject(t *testing.T) {
 		id := uuid.NewString()
 		updateBody := fmt.Sprintf(`{"id":%q,"name":"ghost","repo_url":"https://github.com/example/ghost"}`, id)
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, id)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(updateBody))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(updateBody))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -378,7 +378,7 @@ func TestUpdateProject(t *testing.T) {
 
 		updateBody := fmt.Sprintf(`{"id":%q,"repo_url":"https://github.com/example/updated"}`, p.ID)
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, p.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(updateBody))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(updateBody))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -397,7 +397,7 @@ func TestUpdateProject(t *testing.T) {
 		otherID := uuid.NewString()
 		updateBody := fmt.Sprintf(`{"id":%q,"name":"mismatch","repo_url":"https://github.com/example/mismatch"}`, otherID)
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, p.ID)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, u, strings.NewReader(updateBody))
+		req := authedRequest(http.MethodPut, u, strings.NewReader(updateBody))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -420,7 +420,7 @@ func TestDeleteProject(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		body := projectRequestBody("delete-test", "https://github.com/example/delete-test")
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -431,7 +431,7 @@ func TestDeleteProject(t *testing.T) {
 		_ = resp.Body.Close()
 
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, created.ID)
-		req, _ = http.NewRequestWithContext(context.Background(), http.MethodDelete, u, nil)
+		req = authedRequest(http.MethodDelete, u, nil)
 		resp, err = http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("DELETE /api/v1/projects/%s: %v", created.ID, err)
@@ -445,7 +445,7 @@ func TestDeleteProject(t *testing.T) {
 
 	t.Run("verify deleted", func(t *testing.T) {
 		body := projectRequestBody("verify-del", "https://github.com/example/verify-del")
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -456,7 +456,7 @@ func TestDeleteProject(t *testing.T) {
 		_ = resp.Body.Close()
 
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, created.ID)
-		req, _ = http.NewRequestWithContext(context.Background(), http.MethodDelete, u, nil)
+		req = authedRequest(http.MethodDelete, u, nil)
 		resp, err = http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("DELETE /api/v1/projects/%s: %v", created.ID, err)
@@ -464,7 +464,7 @@ func TestDeleteProject(t *testing.T) {
 		_ = resp.Body.Close()
 
 		// GET after delete should 404.
-		req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+		req = authedRequest(http.MethodGet, u, nil)
 		resp, err = http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET after delete: %v", err)
@@ -479,7 +479,7 @@ func TestDeleteProject(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		id := uuid.NewString()
 		u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, id)
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete, u, nil)
+		req := authedRequest(http.MethodDelete, u, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("DELETE /api/v1/projects/%s: %v", id, err)
@@ -510,7 +510,7 @@ func TestProjectMethodNotAllowed(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequestWithContext(context.Background(), tt.method, ts.URL+tt.path, nil)
+			req := authedRequest(tt.method, ts.URL+tt.path, nil)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatalf("%s %s: %v", tt.method, tt.path, err)

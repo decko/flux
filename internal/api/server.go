@@ -17,10 +17,12 @@ type Server struct {
 	router      *chi.Mux
 	corsOrigin  string
 	serveSPA    bool
+	jwtSecret   []byte
 	projectSvc  *domain.ProjectService
 	ticketSvc   *domain.TicketService
 	prSvc       *domain.PullRequestService
 	pipelineSvc *domain.PipelineRunService
+	authSvc     *domain.AuthService
 }
 
 // ServerOption configures a Server.
@@ -41,6 +43,14 @@ func WithCORSOrigin(origin string) ServerOption {
 func WithSPA() ServerOption {
 	return func(s *Server) {
 		s.serveSPA = true
+	}
+}
+
+// WithJWTSecret sets the JWT signing secret used by the AuthMiddleware
+// for token validation on protected routes.
+func WithJWTSecret(secret []byte) ServerOption {
+	return func(s *Server) {
+		s.jwtSecret = secret
 	}
 }
 
@@ -69,6 +79,13 @@ func WithPRService(svc *domain.PullRequestService) ServerOption {
 func WithPipelineService(svc *domain.PipelineRunService) ServerOption {
 	return func(s *Server) {
 		s.pipelineSvc = svc
+	}
+}
+
+// WithAuthService injects the auth service for authentication endpoints.
+func WithAuthService(svc *domain.AuthService) ServerOption {
+	return func(s *Server) {
+		s.authSvc = svc
 	}
 }
 

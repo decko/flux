@@ -12,6 +12,7 @@ import (
 )
 
 func TestSetupServer_Success(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret-16-chars!")
 	ctx := context.Background()
 	cfg := &config.Config{
 		Server:   config.ServerConfig{Port: 8080},
@@ -36,6 +37,7 @@ func TestSetupServer_Success(t *testing.T) {
 }
 
 func TestSetupServer_HealthEndpoint(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret-16-chars!")
 	ctx := context.Background()
 	cfg := &config.Config{
 		Server:   config.ServerConfig{Port: 8080},
@@ -75,6 +77,7 @@ func TestSetupServer_HealthEndpoint(t *testing.T) {
 }
 
 func TestSetupServer_InvalidDBPath(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret-16-chars!")
 	ctx := context.Background()
 	cfg := &config.Config{
 		Server:   config.ServerConfig{Port: 8080},

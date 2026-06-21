@@ -17,23 +17,33 @@ func (s *Server) registerRoutes() {
 	})
 
 	s.router.Route("/api/v1", func(r chi.Router) {
-		r.Post("/projects", s.handleCreateProject)
-		r.Get("/projects", s.handleListProjects)
-		r.Get("/projects/{id}", s.handleGetProject)
-		r.Put("/projects/{id}", s.handleUpdateProject)
-		r.Delete("/projects/{id}", s.handleDeleteProject)
+		// Public auth routes.
+		r.Post("/auth/register", s.handleRegister)
+		r.Post("/auth/login", s.handleLogin)
+		r.Post("/auth/refresh", s.handleRefresh)
 
-		r.Get("/tickets", s.handleListTickets)
-		r.Get("/tickets/{id}", s.handleGetTicket)
-		r.Put("/tickets/{id}", s.handleUpdateTicket)
+		// Protected routes — require valid JWT token.
+		r.Group(func(r chi.Router) {
+			r.Use(AuthMiddleware(s.jwtSecret))
 
-		r.Get("/pull-requests", s.handleListPRs)
-		r.Get("/pull-requests/{id}", s.handleGetPR)
-		r.Put("/pull-requests/{id}", s.handleUpdatePR)
+			r.Post("/projects", s.handleCreateProject)
+			r.Get("/projects", s.handleListProjects)
+			r.Get("/projects/{id}", s.handleGetProject)
+			r.Put("/projects/{id}", s.handleUpdateProject)
+			r.Delete("/projects/{id}", s.handleDeleteProject)
 
-		r.Get("/pipeline-runs", s.handleListPipelineRuns)
-		r.Post("/pipeline-runs", s.handleCreatePipelineRun)
-		r.Get("/pipeline-runs/{id}", s.handleGetPipelineRun)
+			r.Get("/tickets", s.handleListTickets)
+			r.Get("/tickets/{id}", s.handleGetTicket)
+			r.Put("/tickets/{id}", s.handleUpdateTicket)
+
+			r.Get("/pull-requests", s.handleListPRs)
+			r.Get("/pull-requests/{id}", s.handleGetPR)
+			r.Put("/pull-requests/{id}", s.handleUpdatePR)
+
+			r.Get("/pipeline-runs", s.handleListPipelineRuns)
+			r.Post("/pipeline-runs", s.handleCreatePipelineRun)
+			r.Get("/pipeline-runs/{id}", s.handleGetPipelineRun)
+		})
 	})
 
 	if s.serveSPA {
