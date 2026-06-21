@@ -66,7 +66,7 @@ func TestAuthService_Register(t *testing.T) {
 	svc := domain.NewAuthService(repo, []byte("test-secret"))
 	ctx := context.Background()
 
-	user, err := svc.Register(ctx, "newuser@example.com", "securePass123!", "admin")
+	user, err := svc.Register(ctx, "newuser@example.com", "securePass123!")
 	if err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}
@@ -77,8 +77,8 @@ func TestAuthService_Register(t *testing.T) {
 	if user.Email != "newuser@example.com" {
 		t.Errorf("got email %q, want %q", user.Email, "newuser@example.com")
 	}
-	if user.Role != "admin" {
-		t.Errorf("got role %q, want %q", user.Role, "admin")
+	if user.Role != "user" {
+		t.Errorf("got role %q, want %q", user.Role, "user")
 	}
 	if user.PasswordHash != "" {
 		t.Error("PasswordHash should be empty in returned user (json:\"-\")")
@@ -102,12 +102,12 @@ func TestAuthService_Register_DuplicateEmail(t *testing.T) {
 	svc := domain.NewAuthService(repo, []byte("test-secret"))
 	ctx := context.Background()
 
-	_, err := svc.Register(ctx, "dup@example.com", "pass123", "user")
+	_, err := svc.Register(ctx, "dup@example.com", "pass123")
 	if err != nil {
 		t.Fatalf("first register returned error: %v", err)
 	}
 
-	_, err = svc.Register(ctx, "dup@example.com", "pass456", "user")
+	_, err = svc.Register(ctx, "dup@example.com", "pass456")
 	if err == nil {
 		t.Fatal("expected error for duplicate email, got nil")
 	}
@@ -122,16 +122,15 @@ func TestAuthService_Register_ValidationError(t *testing.T) {
 		name     string
 		email    string
 		password string
-		role     string
 	}{
-		{name: "empty email", email: "", password: "pass123", role: "user"},
-		{name: "empty password", email: "user@example.com", password: "", role: "user"},
-		{name: "empty role", email: "user@example.com", password: "pass123", role: ""},
+		{name: "empty email", email: "", password: "pass123"},
+		{name: "empty password", email: "user@example.com", password: ""},
+		{name: "invalid email", email: "not-an-email", password: "pass123"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := svc.Register(ctx, tt.email, tt.password, tt.role)
+			_, err := svc.Register(ctx, tt.email, tt.password)
 			if err == nil {
 				t.Fatal("expected validation error, got nil")
 			}
@@ -144,7 +143,7 @@ func TestAuthService_Login(t *testing.T) {
 	svc := domain.NewAuthService(repo, []byte("test-secret"))
 	ctx := context.Background()
 
-	_, err := svc.Register(ctx, "login@example.com", "myPassword1", "user")
+	_, err := svc.Register(ctx, "login@example.com", "myPassword1")
 	if err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}
@@ -163,7 +162,7 @@ func TestAuthService_Login_WrongPassword(t *testing.T) {
 	svc := domain.NewAuthService(repo, []byte("test-secret"))
 	ctx := context.Background()
 
-	_, err := svc.Register(ctx, "login@example.com", "correctPassword", "user")
+	_, err := svc.Register(ctx, "login@example.com", "correctPassword")
 	if err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}
@@ -190,7 +189,7 @@ func TestAuthService_RefreshToken(t *testing.T) {
 	svc := domain.NewAuthService(repo, []byte("test-secret"))
 	ctx := context.Background()
 
-	user, err := svc.Register(ctx, "refresh@example.com", "myPassword1", "admin")
+	user, err := svc.Register(ctx, "refresh@example.com", "myPassword1")
 	if err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}

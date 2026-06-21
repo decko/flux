@@ -80,7 +80,7 @@ func TestHandleRegister(t *testing.T) {
 	defer ts.Close()
 
 	t.Run("successful registration returns 201", func(t *testing.T) {
-		body := `{"email":"newuser@example.com","password":"securePass123!","role":"admin"}`
+		body := `{"email":"newuser@example.com","password":"securePass123!"}`
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -103,8 +103,8 @@ func TestHandleRegister(t *testing.T) {
 		if result["email"] != "newuser@example.com" {
 			t.Errorf("got email %q, want %q", result["email"], "newuser@example.com")
 		}
-		if result["role"] != "admin" {
-			t.Errorf("got role %q, want %q", result["role"], "admin")
+		if result["role"] != "user" {
+			t.Errorf("got role %q, want %q", result["role"], "user")
 		}
 		if _, ok := result["password_hash"]; ok {
 			t.Error("response should not include password_hash")
@@ -112,7 +112,7 @@ func TestHandleRegister(t *testing.T) {
 	})
 
 	t.Run("missing email returns 400", func(t *testing.T) {
-		body := `{"password":"pass123","role":"user"}`
+		body := `{"password":"pass123"}`
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -134,7 +134,7 @@ func TestHandleRegister(t *testing.T) {
 	})
 
 	t.Run("missing password returns 400", func(t *testing.T) {
-		body := `{"email":"user@example.com","role":"user"}`
+		body := `{"email":"user@example.com"}`
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -155,28 +155,6 @@ func TestHandleRegister(t *testing.T) {
 		}
 	})
 
-	t.Run("missing role returns 400", func(t *testing.T) {
-		body := `{"email":"user@example.com","password":"pass123"}`
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("POST /api/v1/auth/register: %v", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusBadRequest {
-			t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadRequest)
-		}
-
-		var errResp map[string]string
-		mustDecodeAuth(t, resp, &errResp)
-		if !strings.Contains(errResp["error"], "role") {
-			t.Errorf("error message %q does not mention role", errResp["error"])
-		}
-	})
-
 	t.Run("malformed JSON returns 400", func(t *testing.T) {
 		body := `{bad json}`
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(body))
@@ -194,7 +172,7 @@ func TestHandleRegister(t *testing.T) {
 	})
 
 	t.Run("duplicate email returns 409", func(t *testing.T) {
-		body := `{"email":"dup@example.com","password":"pass123","role":"user"}`
+		body := `{"email":"dup@example.com","password":"pass123"}`
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
@@ -224,7 +202,7 @@ func TestHandleLogin(t *testing.T) {
 	defer ts.Close()
 
 	// First register a user.
-	registerBody := `{"email":"login@example.com","password":"myPassword1","role":"user"}`
+	registerBody := `{"email":"login@example.com","password":"myPassword1"}`
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(registerBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -294,7 +272,7 @@ func TestHandleRefresh(t *testing.T) {
 	defer ts.Close()
 
 	// Register and login to get a token.
-	registerBody := `{"email":"refresh@example.com","password":"myPassword1","role":"user"}`
+	registerBody := `{"email":"refresh@example.com","password":"myPassword1"}`
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(registerBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)

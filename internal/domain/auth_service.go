@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
+	"github.com/decko/flux/pkg/jwtutil"
 )
 
 // AuthService provides authentication business logic for user registration,
@@ -30,19 +32,21 @@ func NewAuthService(repo repository.UserRepository, jwtSecret []byte) *AuthServi
 	}
 }
 
-// Register creates a new user with the given email, password, and role.
-// It hashes the password using bcrypt and persists the user via the repository.
+// Register creates a new user with the given email and password.
+// It hashes the password using bcrypt, assigns the default "user" role,
+// and persists the user via the repository.
 // Returns ErrDuplicateEmail if the email already exists.
-// Returns validation errors if any required field is empty.
-func (s *AuthService) Register(ctx context.Context, email, password, role string) (model.User, error) {
+// Returns validation errors if any required field is empty or if the
+// email format is invalid.
+func (s *AuthService) Register(ctx context.Context, email, password string) (model.User, error) {
 	if email == "" {
 		return model.User{}, fmt.Errorf("email is required")
 	}
 	if password == "" {
 		return model.User{}, fmt.Errorf("password is required")
 	}
-	if role == "" {
-		return model.User{}, fmt.Errorf("role is required")
+	if err := validateEmail(email); err != nil {
+		return model.User{}, err
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -54,7 +58,7 @@ func (s *AuthService) Register(ctx context.Context, email, password, role string
 		ID:           uuid.New().String(),
 		Email:        email,
 		PasswordHash: string(hash),
-		Role:         role,
+		Role:         "user",
 		CreatedAt:    time.Now().UTC(),
 	}
 
@@ -68,6 +72,16 @@ func (s *AuthService) Register(ctx context.Context, email, password, role string
 	// Clear the password hash before returning to the caller.
 	user.PasswordHash = ""
 	return user, nil
+}
+
+// validateEmail performs basic email format validation.
+// It checks for the presence of "@" and a non-empty domain part.
+func validateEmail(email string) error {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("invalid email format")
+	}
+	return nil
 }
 
 // Login verifies the user's credentials and returns a signed JWT token.
@@ -95,16 +109,16 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (string
 }
 
 // RefreshToken validates an existing JWT token and returns a new one with
-// an extended expiry. Returns an error if the token is invalid or expired.
+// an extended expiry. The user is re-fetched from the database to ensure
+// the account is still active. Returns an error if the token is invalid
+// or expired.
 func (s *AuthService) RefreshToken(ctx context.Context, tokenString string) (string, error) {
-	claims, err := s.validateToken(tokenString)
+	claims, err := jwtutil.ValidateJWTToken(tokenString, s.jwtSecret)
 	if err != nil {
 		return "", fmt.Errorf("refresh token: %w", err)
 	}
 
 	userID, _ := claims.GetSubject()
-	email, _ := claims["email"].(string)
-	role, _ := claims["role"].(string)
 
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -116,8 +130,6 @@ func (s *AuthService) RefreshToken(ctx context.Context, tokenString string) (str
 		return "", fmt.Errorf("refreshing token: %w", err)
 	}
 
-	_ = email
-	_ = role
 	return token, nil
 }
 
@@ -133,24 +145,4 @@ func (s *AuthService) generateToken(user model.User) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)
-}
-
-// validateToken parses and validates a JWT token, returning its claims.
-func (s *AuthService) validateToken(tokenString string) (jwt.MapClaims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return s.jwtSecret, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || !token.Valid {
-		return nil, fmt.Errorf("invalid token claims")
-	}
-
-	return claims, nil
 }

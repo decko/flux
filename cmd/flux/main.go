@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -76,10 +77,18 @@ func run() error {
 
 // jwtSecret returns the JWT signing key from the JWT_SECRET environment
 // variable, or a development fallback if not set.
+// It terminates the process if the secret is shorter than 16 characters,
+// as short secrets are a security risk. The dev fallback "dev-secret"
+// is intentionally short to fail closed in production; set JWT_SECRET
+// to a value of at least 16 characters.
+// Tests may set NO_AUTH=1 to bypass the check.
 func jwtSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		secret = "dev-secret"
+	}
+	if len(secret) < 16 && os.Getenv("NO_AUTH") != "1" {
+		log.Fatalf("JWT_SECRET must be at least 16 characters (got %d)", len(secret))
 	}
 	return []byte(secret)
 }
@@ -145,10 +154,12 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	ticketSvc := domain.NewTicketService(ticketRepo)
 	prSvc := domain.NewPullRequestService(prRepo)
 	pipelineSvc := domain.NewPipelineRunService(pipelineRepo)
-	authSvc := domain.NewAuthService(userRepo, jwtSecret())
+	jwtSecret := jwtSecret()
+	authSvc := domain.NewAuthService(userRepo, jwtSecret)
 
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
+		api.WithJWTSecret(jwtSecret),
 		api.WithProjectService(projectSvc),
 		api.WithTicketService(ticketSvc),
 		api.WithPRService(prSvc),

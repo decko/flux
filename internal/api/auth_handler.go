@@ -15,14 +15,13 @@ import (
 type authRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	Role     string `json:"role"`
 }
 
 // handleRegister handles POST /api/v1/auth/register.
-// It decodes {email, password, role} from the JSON body, calls the auth
-// service to register the user, and returns 201 Created with the user data
-// (without the password hash). Returns 400 for validation errors and 409
-// for duplicate email.
+// It decodes {email, password} from the JSON body, calls the auth service
+// to register the user with default role "user", and returns 201 Created
+// with the user data (without the password hash). Returns 400 for
+// validation errors and 409 for duplicate email.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var req authRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -30,7 +29,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.authSvc.Register(r.Context(), req.Email, req.Password, req.Role)
+	user, err := s.authSvc.Register(r.Context(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, repository.ErrDuplicateEmail) {
 			writeJSONError(w, http.StatusConflict, "email already exists", middleware.GetReqID(r.Context()))

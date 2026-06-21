@@ -79,7 +79,7 @@ func TestAPIV1RoutesExist(t *testing.T) {
 	}
 
 	svc := domain.NewProjectService(repo)
-	srv := NewServer(WithProjectService(svc))
+	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithProjectService(svc))
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
@@ -92,7 +92,7 @@ func TestAPIV1RoutesExist(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+tt.path, nil)
+			req := authedRequest(http.MethodGet, ts.URL+tt.path, nil)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatalf("GET %s: %v", tt.path, err)

@@ -2,11 +2,10 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/decko/flux/pkg/jwtutil"
 )
 
 // contextKey is a private type for context keys to avoid collisions.
@@ -37,7 +36,7 @@ func AuthMiddleware(jwtSecret []byte) func(http.Handler) http.Handler {
 			}
 
 			tokenStr := parts[1]
-			claims, err := validateJWT(tokenStr, jwtSecret)
+			claims, err := jwtutil.ValidateJWTToken(tokenStr, jwtSecret)
 			if err != nil {
 				writeJSONError(w, http.StatusUnauthorized, "invalid or expired token", "")
 				return
@@ -65,24 +64,4 @@ func UserIDFromContext(ctx context.Context) string {
 func UserRoleFromContext(ctx context.Context) string {
 	role, _ := ctx.Value(contextKeyRole).(string)
 	return role
-}
-
-// validateJWT parses and validates a JWT token string using the given secret.
-func validateJWT(tokenString string, jwtSecret []byte) (jwt.MapClaims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return jwtSecret, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || !token.Valid {
-		return nil, fmt.Errorf("invalid token claims")
-	}
-
-	return claims, nil
 }
