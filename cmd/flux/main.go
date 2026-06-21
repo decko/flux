@@ -35,6 +35,8 @@ func run() error {
 		return fmt.Errorf("validate config: %w", err)
 	}
 
+	setupLogging(cfg.Logging.Level)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -70,6 +72,22 @@ func run() error {
 	}
 
 	return nil
+}
+
+// setupLogging configures the default slog logger with the given level.
+func setupLogging(level string) {
+	var slogLevel slog.Level
+	switch level {
+	case "debug":
+		slogLevel = slog.LevelDebug
+	case "warn":
+		slogLevel = slog.LevelWarn
+	case "error":
+		slogLevel = slog.LevelError
+	default:
+		slogLevel = slog.LevelInfo
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slogLevel})))
 }
 
 // setupServer wires together all dependencies — database, repositories,
