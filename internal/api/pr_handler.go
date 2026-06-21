@@ -30,6 +30,11 @@ func prServiceError(err error) (int, string) {
 	return http.StatusInternalServerError, "Internal Server Error"
 }
 
+// prPage is the JSON response envelope for the PR list endpoint.
+type prPage struct {
+	Items []model.PullRequest `json:"items"`
+}
+
 // handleListPRs handles GET /api/v1/pull-requests.
 // Supports query params: project_id, status.
 // Returns a JSON object with an "items" array.
@@ -59,7 +64,7 @@ func (s *Server) handleListPRs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"items": prs})
+	_ = json.NewEncoder(w).Encode(prPage{Items: prs})
 }
 
 // handleGetPR handles GET /api/v1/pull-requests/{id}.

@@ -59,11 +59,6 @@ func setupPRServer(t *testing.T) (*Server, func(t *testing.T, pr model.PullReque
 	return srv, seed
 }
 
-// prListResponse is the JSON response envelope for the PR list endpoint.
-type prListResponse struct {
-	Items []model.PullRequest `json:"items"`
-}
-
 // ─── List ─────────────────────────────────────────────────────────────────
 
 func TestListPRs(t *testing.T) {
@@ -83,7 +78,7 @@ func TestListPRs(t *testing.T) {
 			t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var body prListResponse
+		var body prPage
 		mustDecode(t, resp, &body)
 		if body.Items == nil {
 			t.Fatal("expected non-nil items array, got nil")
@@ -120,7 +115,7 @@ func TestListPRs(t *testing.T) {
 			t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var body prListResponse
+		var body prPage
 		mustDecode(t, resp, &body)
 		if len(body.Items) != 2 {
 			t.Errorf("got %d items, want 2", len(body.Items))
@@ -155,7 +150,7 @@ func TestListPRs(t *testing.T) {
 			t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var body prListResponse
+		var body prPage
 		mustDecode(t, resp, &body)
 		if len(body.Items) != 1 {
 			t.Fatalf("got %d items, want 1", len(body.Items))
@@ -193,7 +188,7 @@ func TestListPRs(t *testing.T) {
 			t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
 		}
 
-		var body prListResponse
+		var body prPage
 		mustDecode(t, resp, &body)
 		if len(body.Items) != 1 {
 			t.Fatalf("got %d items, want 1", len(body.Items))
