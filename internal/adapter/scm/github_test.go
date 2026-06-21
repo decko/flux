@@ -56,13 +56,7 @@ func strPtr(s string) *string { return &s }
 // newTestAdapter creates a GitHubSCMAdapter pointing at the given test server.
 func newTestAdapter(t *testing.T, srv *httptest.Server) *GitHubSCMAdapter {
 	t.Helper()
-	return &GitHubSCMAdapter{
-		owner:      "test-owner",
-		repo:       "test-repo",
-		token:      "test-token",
-		httpClient: srv.Client(),
-		baseURL:    srv.URL,
-	}
+	return NewGitHubAdapter("test-owner", "test-repo", "test-token", srv.Client(), WithBaseURL(srv.URL))
 }
 
 // linkHeader builds a single Link header relation entry.
@@ -85,33 +79,22 @@ func writeJSON(t *testing.T, w http.ResponseWriter, status int, v any) {
 // ---------------------------------------------------------------------------
 
 func TestNewGitHubAdapter(t *testing.T) {
-	adapter := NewGitHubAdapter("owner", "repo", "token", nil)
-	if got := adapter.Name(); got != "github" {
+	a := NewGitHubAdapter("owner", "repo", "token", nil)
+	if got := a.Name(); got != "github" {
 		t.Errorf("Name() = %q, want %q", got, "github")
-	}
-	if adapter.owner != "owner" {
-		t.Errorf("owner = %q, want %q", adapter.owner, "owner")
-	}
-	if adapter.repo != "repo" {
-		t.Errorf("repo = %q, want %q", adapter.repo, "repo")
-	}
-	if adapter.token != "token" {
-		t.Errorf("token = %q, want %q", adapter.token, "token")
-	}
-	if adapter.httpClient == nil {
-		t.Error("httpClient should not be nil")
-	}
-	if adapter.baseURL != "https://api.github.com" {
-		t.Errorf("baseURL = %q, want %q", adapter.baseURL, "https://api.github.com")
 	}
 }
 
-func TestNewGitHubAdapter_NilClient(t *testing.T) {
-	adapter := NewGitHubAdapter("owner", "repo", "token", nil)
-	if adapter.httpClient == nil {
-		t.Error("expected default httpClient when nil is passed")
+func TestNewGitHubAdapter_WithBaseURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	a := NewGitHubAdapter("owner", "repo", "token", srv.Client(), WithBaseURL(srv.URL))
+	if err := a.Health(context.Background()); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
 	}
-	_ = adapter.httpClient // use of http.DefaultClient or new client is acceptable
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +390,35 @@ func TestGitHubAdapter_GetPullRequest(t *testing.T) {
 		}
 	})
 
+	t.Run("rate limit 429", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = fmt.Fprintf(w, `{"message":"API rate limit exceeded"}`)
+		}))
+		defer srv.Close()
+
+		adapter := newTestAdapter(t, srv)
+		_, err := adapter.GetPullRequest(context.Background(), "proj-2", "42")
+		if err == nil {
+			t.Fatal("expected error for rate limit, got nil")
+		}
+	})
+
+	t.Run("invalid external ID", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		adapter := newTestAdapter(t, srv)
+		_, err := adapter.GetPullRequest(context.Background(), "proj-2", "abc")
+		if err == nil {
+			t.Fatal("expected error for non-numeric external ID, got nil")
+		}
+	})
+
 	t.Run("closed PR (not merged)", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(t, w, http.StatusOK, ghPR{
@@ -530,6 +542,123 @@ func TestGitHubAdapter_ListReviews(t *testing.T) {
 			t.Fatal("expected error for 401, got nil")
 		}
 	})
+
+	t.Run("pagination", func(t *testing.T) {
+		var pageNum int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			pageNum++
+			switch pageNum {
+			case 1:
+				nextURL := fmt.Sprintf("http://%s/repos/test-owner/test-repo/pulls/10/reviews?page=2", r.Host)
+				w.Header().Add("Link", linkHeader("next", nextURL))
+				writeJSON(t, w, http.StatusOK, []ghReview{
+					{
+						User:        ghUser{Login: "reviewer1"},
+						State:       "APPROVED",
+						Body:        "LGTM",
+						SubmittedAt: "2024-01-16T12:00:00Z",
+					},
+				})
+			case 2:
+				writeJSON(t, w, http.StatusOK, []ghReview{
+					{
+						User:        ghUser{Login: "reviewer2"},
+						State:       "COMMENTED",
+						Body:        "Looks good",
+						SubmittedAt: "2024-01-17T12:00:00Z",
+					},
+				})
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		defer srv.Close()
+
+		adapter := newTestAdapter(t, srv)
+		reviews, err := adapter.ListReviews(context.Background(), "proj-1", "10")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(reviews) != 2 {
+			t.Fatalf("got %d reviews, want 2", len(reviews))
+		}
+		if reviews[0].Author != "reviewer1" {
+			t.Errorf("reviews[0].Author = %q, want %q", reviews[0].Author, "reviewer1")
+		}
+		if reviews[1].Author != "reviewer2" {
+			t.Errorf("reviews[1].Author = %q, want %q", reviews[1].Author, "reviewer2")
+		}
+	})
+
+	t.Run("unknown review states are skipped", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(t, w, http.StatusOK, []ghReview{
+				{
+					User:        ghUser{Login: "reviewer1"},
+					State:       "PENDING",
+					Body:        "pending review",
+					SubmittedAt: "2024-01-16T12:00:00Z",
+				},
+				{
+					User:        ghUser{Login: "reviewer2"},
+					State:       "APPROVED",
+					Body:        "LGTM",
+					SubmittedAt: "2024-01-17T12:00:00Z",
+				},
+				{
+					User:        ghUser{Login: "reviewer3"},
+					State:       "DISMISSED",
+					Body:        "dismissed",
+					SubmittedAt: "2024-01-18T12:00:00Z",
+				},
+			})
+		}))
+		defer srv.Close()
+
+		adapter := newTestAdapter(t, srv)
+		reviews, err := adapter.ListReviews(context.Background(), "proj-1", "10")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(reviews) != 1 {
+			t.Fatalf("got %d reviews, want 1 (only APPROVED should be included)", len(reviews))
+		}
+		if reviews[0].Author != "reviewer2" {
+			t.Errorf("reviews[0].Author = %q, want %q", reviews[0].Author, "reviewer2")
+		}
+		if reviews[0].Status != model.ReviewStatusApproved {
+			t.Errorf("reviews[0].Status = %q, want %q", reviews[0].Status, model.ReviewStatusApproved)
+		}
+	})
+
+	t.Run("rate limit 429", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = fmt.Fprintf(w, `{"message":"API rate limit exceeded"}`)
+		}))
+		defer srv.Close()
+
+		adapter := newTestAdapter(t, srv)
+		_, err := adapter.ListReviews(context.Background(), "proj-1", "10")
+		if err == nil {
+			t.Fatal("expected error for rate limit, got nil")
+		}
+	})
+
+	t.Run("invalid external ID", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		adapter := newTestAdapter(t, srv)
+		_, err := adapter.ListReviews(context.Background(), "proj-1", "abc")
+		if err == nil {
+			t.Fatal("expected error for non-numeric external ID, got nil")
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -562,6 +691,19 @@ func TestGitHubAdapter_Health(t *testing.T) {
 		adapter := newTestAdapter(t, srv)
 		if err := adapter.Health(context.Background()); err == nil {
 			t.Fatal("expected error for 500, got nil")
+		}
+	})
+
+	t.Run("rate limit 429", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.WriteHeader(http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		adapter := newTestAdapter(t, srv)
+		if err := adapter.Health(context.Background()); err == nil {
+			t.Fatal("expected error for rate limit, got nil")
 		}
 	})
 

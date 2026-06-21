@@ -5,8 +5,10 @@ package scm
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/decko/flux/internal/adapter"
+	"github.com/decko/flux/internal/adapter/github"
 	"github.com/decko/flux/internal/model"
 )
 
@@ -38,19 +40,19 @@ type StubSCMAdapter struct{}
 
 func (s *StubSCMAdapter) Name() string { return "test-stub" }
 
-func (s *StubSCMAdapter) ListPullRequests(ctx context.Context, projectID string) ([]model.PullRequest, error) {
+func (s *StubSCMAdapter) ListPullRequests(_ context.Context, _ string) ([]model.PullRequest, error) {
 	return nil, adapter.ErrNotImplemented
 }
 
-func (s *StubSCMAdapter) GetPullRequest(ctx context.Context, projectID, externalID string) (*model.PullRequest, error) {
+func (s *StubSCMAdapter) GetPullRequest(_ context.Context, _, _ string) (*model.PullRequest, error) {
 	return nil, adapter.ErrNotImplemented
 }
 
-func (s *StubSCMAdapter) ListReviews(ctx context.Context, projectID, externalID string) ([]model.Review, error) {
+func (s *StubSCMAdapter) ListReviews(_ context.Context, _, _ string) ([]model.Review, error) {
 	return nil, adapter.ErrNotImplemented
 }
 
-func (s *StubSCMAdapter) Health(ctx context.Context) error {
+func (s *StubSCMAdapter) Health(_ context.Context) error {
 	return adapter.ErrNotImplemented
 }
 
@@ -59,25 +61,37 @@ var _ SCMAdapter = (*StubSCMAdapter)(nil)
 
 // GitHubSCMAdapter implements SCMAdapter for the GitHub REST API v3.
 type GitHubSCMAdapter struct {
-	owner      string
-	repo       string
-	token      string
-	httpClient *http.Client
-	baseURL    string
+	owner    string
+	repo     string
+	ghClient *github.Client
+	baseURL  string
 }
 
-// NewGitHubAdapter creates a new GitHubSCMAdapter.
-func NewGitHubAdapter(owner, repo, token string, httpClient *http.Client) *GitHubSCMAdapter {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
+// GitHubSCMOption configures a GitHubSCMAdapter.
+type GitHubSCMOption func(*GitHubSCMAdapter)
+
+// WithBaseURL sets the base URL for the GitHub API. Used for testing with
+// httptest.Server or GitHub Enterprise.
+func WithBaseURL(baseURL string) GitHubSCMOption {
+	return func(a *GitHubSCMAdapter) {
+		a.baseURL = strings.TrimRight(baseURL, "/")
 	}
-	return &GitHubSCMAdapter{
-		owner:      owner,
-		repo:       repo,
-		token:      token,
-		httpClient: httpClient,
-		baseURL:    "https://api.github.com",
+}
+
+// NewGitHubAdapter creates a new GitHubSCMAdapter. If httpClient is nil,
+// http.DefaultClient is used. The default base URL is https://api.github.com.
+// Functional options (e.g. WithBaseURL) can be provided to override defaults.
+func NewGitHubAdapter(owner, repo, token string, httpClient *http.Client, opts ...GitHubSCMOption) *GitHubSCMAdapter {
+	a := &GitHubSCMAdapter{
+		owner:    owner,
+		repo:     repo,
+		ghClient: github.NewClient(token, httpClient),
+		baseURL:  "https://api.github.com",
 	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
 }
 
 // Name returns "github".
