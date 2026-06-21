@@ -14,11 +14,12 @@ import (
 // Server is the HTTP server for the flux API. It wraps a chi router
 // with middleware and routes configured.
 type Server struct {
-	router     *chi.Mux
-	corsOrigin string
-	projectSvc *domain.ProjectService
-	ticketSvc  *domain.TicketService
-	prSvc      *domain.PullRequestService
+	router      *chi.Mux
+	corsOrigin  string
+	projectSvc  *domain.ProjectService
+	ticketSvc   *domain.TicketService
+	prSvc       *domain.PullRequestService
+	pipelineSvc *domain.PipelineRunService
 }
 
 // ServerOption configures a Server.
@@ -51,6 +52,13 @@ func WithTicketService(svc *domain.TicketService) ServerOption {
 func WithPRService(svc *domain.PullRequestService) ServerOption {
 	return func(s *Server) {
 		s.prSvc = svc
+	}
+}
+
+// WithPipelineService injects the pipeline run service for pipeline run endpoints.
+func WithPipelineService(svc *domain.PipelineRunService) ServerOption {
+	return func(s *Server) {
+		s.pipelineSvc = svc
 	}
 }
 
