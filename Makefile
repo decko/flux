@@ -4,13 +4,13 @@ BINARY=flux
 GOFLAGS=-trimpath
 LDFLAGS=-s -w
 
-build: backend
-	@if [ -f web/package.json ]; then $(MAKE) frontend; fi
+build: web/dist
+	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/flux
 
 backend:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/flux
 
-frontend:
+web/dist:
 	cd web && npm install && npm run build
 
 run:

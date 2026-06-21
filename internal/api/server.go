@@ -16,6 +16,7 @@ import (
 type Server struct {
 	router      *chi.Mux
 	corsOrigin  string
+	serveSPA    bool
 	projectSvc  *domain.ProjectService
 	ticketSvc   *domain.TicketService
 	prSvc       *domain.PullRequestService
@@ -31,6 +32,15 @@ type ServerOption func(*Server)
 func WithCORSOrigin(origin string) ServerOption {
 	return func(s *Server) {
 		s.corsOrigin = origin
+	}
+}
+
+// WithSPA enables serving the embedded SPA frontend at the root path.
+// When enabled, static files from the frontend build are served and
+// non-API routes fall back to index.html for client-side routing.
+func WithSPA() ServerOption {
+	return func(s *Server) {
+		s.serveSPA = true
 	}
 }
 

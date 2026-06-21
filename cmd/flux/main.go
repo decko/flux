@@ -137,6 +137,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithTicketService(ticketSvc),
 		api.WithPRService(prSvc),
 		api.WithPipelineService(pipelineSvc),
+		api.WithSPA(),
 	)
 
 	return srv, func() { _ = db.Close() }, nil
