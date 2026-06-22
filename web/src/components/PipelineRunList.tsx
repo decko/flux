@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 
 export interface PipelineRunListProps {
-  ticketId: string;
+  /** If provided, only runs for this ticket are fetched. Otherwise all runs are fetched. */
+  ticketId?: string;
 }
 
 interface PipelineRunPhase {
@@ -40,17 +41,20 @@ function getToken(): string | null {
 }
 
 /**
- * Fetches pipeline runs for a given ticket.
- * GET /api/v1/pipeline-runs?ticket_id={ticketId} → PipelineRun[]
+ * Fetches pipeline runs, optionally filtered by ticket_id.
+ * GET /api/v1/pipeline-runs[?ticket_id={ticketId}] → PipelineRun[]
  */
-async function fetchPipelineRuns(ticketId: string): Promise<PipelineRun[]> {
+async function fetchPipelineRuns(ticketId?: string): Promise<PipelineRun[]> {
   const token = getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await fetch(`/api/v1/pipeline-runs?ticket_id=${encodeURIComponent(ticketId)}`, {
-    headers,
-  });
+  let url = '/api/v1/pipeline-runs';
+  if (ticketId) {
+    url += `?ticket_id=${encodeURIComponent(ticketId)}`;
+  }
+
+  const res = await fetch(url, { headers });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -61,12 +65,12 @@ async function fetchPipelineRuns(ticketId: string): Promise<PipelineRun[]> {
 }
 
 /**
- * PipelineRunList fetches pipeline runs for a ticket and displays them as cards.
+ * PipelineRunList fetches pipeline runs (all or filtered by ticket) and displays them as cards.
  * Supports loading (skeleton), empty, error, and success states.
  */
 export function PipelineRunList({ ticketId }: PipelineRunListProps) {
   const query = useQuery<PipelineRun[]>({
-    queryKey: ['pipeline-runs', ticketId],
+    queryKey: ticketId ? ['pipeline-runs', ticketId] : ['pipeline-runs'],
     queryFn: () => fetchPipelineRuns(ticketId),
   });
 
