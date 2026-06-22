@@ -168,7 +168,7 @@ func (a *GitHubSCMAdapter) ListReviews(ctx context.Context, projectID, externalI
 				// Skip unknown review states (PENDING, DISMISSED, etc.).
 				continue
 			}
-			createdAt, _ := time.Parse(time.RFC3339, r.SubmittedAt)
+			createdAt := parseTime(r.SubmittedAt)
 
 			allReviews = append(allReviews, model.Review{
 				Author:    r.User.Login,
