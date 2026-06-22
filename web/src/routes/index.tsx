@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createRoute, redirect } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
 
@@ -125,12 +125,42 @@ export function Dashboard() {
   const pullRequestCount = pullRequestsQuery.data?.length ?? 0;
   const pipelineRunCount = pipelineRunsQuery.data?.length ?? 0;
 
+  const queryClient = useQueryClient();
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const token = getToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/v1/sync/trigger', { method: 'POST', headers });
+      if (!res.ok) throw new Error('Sync trigger failed');
+    },
+    onSuccess: () => {
+      // Refetch all counts after sync
+      queryClient.invalidateQueries({ queryKey: ['projects-count'] });
+      queryClient.invalidateQueries({ queryKey: ['tickets-count'] });
+      queryClient.invalidateQueries({ queryKey: ['pull-requests-count'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-runs-count'] });
+    },
+  });
+
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-      <p className="mt-2 text-gray-600">
-        Welcome to Flux — your control plane for agentic software development.
-      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="mt-2 text-gray-600">
+            Welcome to Flux — your control plane for agentic software development.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending}
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {syncMutation.isPending ? 'Syncing...' : 'Sync Now'}
+        </button>
+      </div>
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Projects" count={projectCount} href="/projects" />
         <StatCard title="Tickets" count={ticketCount} href="/tickets" />
