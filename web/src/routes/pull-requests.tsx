@@ -64,8 +64,8 @@ const statusColors: Record<string, string> = {
 // ─── Pull Request Card ────────────────────────────────────────────────────
 
 function PullRequestCard({ pr }: { pr: PullRequest }) {
-  const ticketCount = pr.ticket_ids.length;
-  const reviewCount = pr.reviews.length;
+  const ticketCount = pr.ticket_ids?.length;
+  const reviewCount = pr.reviews?.length;
 
   return (
     <div
