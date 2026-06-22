@@ -62,6 +62,23 @@ export function Dashboard() {
     queryFn: () => fetchArray('/api/v1/pipeline-runs'),
   });
 
+  const queryClient = useQueryClient();
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const token = getToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch('/api/v1/sync/trigger', { method: 'POST', headers });
+      if (!res.ok) throw new Error('Sync trigger failed');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects-count'] });
+      queryClient.invalidateQueries({ queryKey: ['tickets-count'] });
+      queryClient.invalidateQueries({ queryKey: ['pull-requests-count'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-runs-count'] });
+    },
+  });
+
   // --- Loading state ---
   if (
     projectsQuery.isPending ||
@@ -124,24 +141,6 @@ export function Dashboard() {
   const ticketCount = ticketsQuery.data?.length ?? 0;
   const pullRequestCount = pullRequestsQuery.data?.length ?? 0;
   const pipelineRunCount = pipelineRunsQuery.data?.length ?? 0;
-
-  const queryClient = useQueryClient();
-  const syncMutation = useMutation({
-    mutationFn: async () => {
-      const token = getToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch('/api/v1/sync/trigger', { method: 'POST', headers });
-      if (!res.ok) throw new Error('Sync trigger failed');
-    },
-    onSuccess: () => {
-      // Refetch all counts after sync
-      queryClient.invalidateQueries({ queryKey: ['projects-count'] });
-      queryClient.invalidateQueries({ queryKey: ['tickets-count'] });
-      queryClient.invalidateQueries({ queryKey: ['pull-requests-count'] });
-      queryClient.invalidateQueries({ queryKey: ['pipeline-runs-count'] });
-    },
-  });
 
   return (
     <div>
