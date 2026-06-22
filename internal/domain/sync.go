@@ -16,8 +16,9 @@ import (
 )
 
 // SyncStatus holds the result of the last sync operation.
+// LastSyncAt is nil when no sync has been performed yet.
 type SyncStatus struct {
-	LastSyncAt    time.Time
+	LastSyncAt    *time.Time
 	LastSyncError string
 	TicketsSynced int
 	PRsSynced     int
@@ -262,7 +263,8 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 
 	// Update status under lock.
 	s.mu.Lock()
-	s.status.LastSyncAt = time.Now()
+	now := time.Now()
+	s.status.LastSyncAt = &now
 	if lastErr != nil {
 		s.status.LastSyncError = lastErr.Error()
 	} else {

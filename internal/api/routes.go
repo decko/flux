@@ -43,6 +43,11 @@ func (s *Server) registerRoutes() {
 			r.Get("/pipeline-runs", s.handleListPipelineRuns)
 			r.Post("/pipeline-runs", s.handleCreatePipelineRun)
 			r.Get("/pipeline-runs/{id}", s.handleGetPipelineRun)
+
+			r.Get("/sync/status", s.handleSyncStatus)
+			r.Post("/sync/trigger", s.handleSyncTrigger)
+			r.Get("/adapters", s.handleListAdapters)
+			r.Get("/adapters/{type}/health", s.handleAdapterHealth)
 		})
 	})
 

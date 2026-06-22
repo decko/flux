@@ -157,6 +157,13 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	jwtSecret := jwtSecret()
 	authSvc := domain.NewAuthService(userRepo, jwtSecret)
 
+	syncInterval, err := time.ParseDuration(cfg.Sync.Interval)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("parse sync interval: %w", err)
+	}
+	syncSvc := domain.NewSyncService(ticketRepo, prRepo, nil, nil, syncInterval)
+
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
 		api.WithJWTSecret(jwtSecret),
@@ -165,8 +172,28 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithPRService(prSvc),
 		api.WithPipelineService(pipelineSvc),
 		api.WithAuthService(authSvc),
+		api.WithSyncService(syncSvc),
+		api.WithAdapters(buildAdapterMap(cfg.Adapters)),
 		api.WithSPA(),
 	)
 
 	return srv, func() { _ = db.Close() }, nil
+}
+
+// buildAdapterMap converts a slice of config AdapterEntry to a map of
+// adapter type to AdapterInfo, used for adapter listing and health checks.
+func buildAdapterMap(entries []config.AdapterEntry) map[string]domain.AdapterInfo {
+	if len(entries) == 0 {
+		return nil
+	}
+	m := make(map[string]domain.AdapterInfo, len(entries))
+	for _, e := range entries {
+		// Use the first entry of each adapter type; duplicates are overwritten.
+		m[e.Type] = domain.AdapterInfo{
+			Type:   e.Type,
+			Name:   e.Type, // fallback name is the type key
+			Health: "unknown",
+		}
+	}
+	return m
 }
