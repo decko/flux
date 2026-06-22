@@ -94,7 +94,7 @@ func Load(path string) (*Config, error) {
 		cfg.Server.Port = 8080
 	}
 	if cfg.Database.Path == "" {
-		cfg.Database.Path = ":memory:"
+		cfg.Database.Path = "flux.db"
 	}
 	if cfg.CORS.Origin == "" {
 		cfg.CORS.Origin = "*"

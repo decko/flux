@@ -17,6 +17,53 @@ Flux provides visibility and orchestration for teams using AI agents to develop 
 - **Configuration** — YAML config with environment variable overrides
 - **Graceful Shutdown** — SIGINT/SIGTERM handling with connection draining
 
+## Quickstart (Self-Host)
+
+Flux manages its own development. Here's how to set it up.
+
+### 1. Build
+
+```bash
+git clone https://github.com/decko/flux
+cd flux
+make build  # or: go build -o flux ./cmd/flux/
+```
+
+### 2. Configure
+
+```bash
+# Required: JWT secret for auth (at least 16 characters)
+export JWT_SECRET=your-secret-key-at-least-16-chars
+
+# Required for GitHub sync: create a classic token at https://github.com/settings/tokens
+export GITHUB_TOKEN=ghp_your-token-here
+
+# Copy and edit the example config
+cp flux.yaml.example flux.yaml
+# Edit owner/repo in flux.yaml if needed
+```
+
+### 3. Run
+
+```bash
+./flux
+# Open http://localhost:8080 — you'll be redirected to /login
+# Register an account, then all pages are available
+```
+
+### 4. Sync from GitHub
+
+```bash
+# Login via API to get a token
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"your@email.com","password":"your-password"}' | jq -r '.token')
+
+# Trigger a sync
+curl -X POST http://localhost:8080/api/v1/sync/trigger \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## Quick Start
 
 ```bash

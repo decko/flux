@@ -1,14 +1,41 @@
-# Flux configuration
-# Copy to flux.yaml and customize for your environment.
+# Flux self-host configuration example.
+# Copy to flux.yaml and fill in your values.
 
 server:
+  # Port the web UI and API listen on.
   port: 8080
 
 database:
+  # SQLite database file path. :memory: for ephemeral, a path for persistent.
   path: flux.db
 
 cors:
+  # Allowed CORS origin. Use * for development.
   origin: "*"
 
 logging:
+  # Log level: debug, info, warn, error
   level: info
+
+sync:
+  # How often to poll adapters for new data.
+  interval: 5m
+
+adapters:
+  # GitHub adapter — syncs issues and pull requests.
+  # Token is read from GITHUB_TOKEN environment variable.
+  - type: github
+    owner: decko
+    repo: flux
+
+orchestrators:
+  # soda pipeline runner. Path defaults to "soda" (looked up in $PATH).
+  - type: soda
+    path: soda
+    pipelines:
+      - name: default
+        config: {}
+      - name: quick-fix
+        config:
+          agent_count: 2
+          max_tokens: 8000
