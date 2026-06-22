@@ -187,7 +187,10 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 			// Build lookup map of existing tickets for O(1) upsert matching.
 			existingTickets, listErr := s.TicketRepo.List(ctx, repository.TicketFilter{ProjectID: projectID})
 			byKey := make(map[ticketKey]model.Ticket, len(existingTickets))
-			if listErr == nil {
+			if listErr != nil {
+				lastErr = listErr
+				s.logger.Error("list existing tickets failed", "project_id", projectID, "err", listErr)
+			} else {
 				for _, t := range existingTickets {
 					key := ticketKey{ProjectID: t.ProjectID, Source: t.Source, ExternalID: t.ExternalID}
 					byKey[key] = t
@@ -225,7 +228,10 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 			// Build lookup map of existing PRs for O(1) upsert matching.
 			existingPRs, listErr := s.PRRepo.List(ctx, repository.PullRequestFilter{ProjectID: projectID})
 			byKey := make(map[prKey]model.PullRequest, len(existingPRs))
-			if listErr == nil {
+			if listErr != nil {
+				lastErr = listErr
+				s.logger.Error("list existing PRs failed", "project_id", projectID, "err", listErr)
+			} else {
 				for _, pr := range existingPRs {
 					key := prKey{ProjectID: pr.ProjectID, Source: pr.Source, ExternalID: pr.ExternalID}
 					byKey[key] = pr
