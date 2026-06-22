@@ -26,7 +26,7 @@ function RootLayout() {
 
   function handleLogout() {
     logout();
-    navigate({ to: '/login' });
+    navigate({ to: '/login', search: { redirect: undefined } });
   }
 
   return (
@@ -58,7 +58,7 @@ function RootLayout() {
                 </button>
               ) : (
                 <Link
-                  to="/login"
+                  to="/login" search={{ redirect: undefined }}
                   className="text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
                 >
                   Login
@@ -113,7 +113,7 @@ function RootLayout() {
                 </button>
               ) : (
                 <Link
-                  to="/login"
+                  to="/login" search={{ redirect: undefined }}
                   className="block text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
                   onClick={() => setMobileMenuOpen(false)}
                 >
