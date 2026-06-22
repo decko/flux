@@ -14,6 +14,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/decko/flux/internal/adapter/scm"
+	"github.com/decko/flux/internal/adapter/ticket"
 	"github.com/decko/flux/internal/api"
 	"github.com/decko/flux/internal/config"
 	"github.com/decko/flux/internal/domain"
@@ -163,6 +165,20 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		return nil, nil, fmt.Errorf("parse sync interval: %w", err)
 	}
 	syncSvc := domain.NewSyncService(ticketRepo, prRepo, nil, nil, syncInterval)
+
+	// Build GitHub adapters if a token is configured.
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		for _, a := range cfg.Adapters {
+			if a.Type == "github" {
+				slog.Info("configuring github adapter", "owner", a.Owner, "repo", a.Repo)
+				ticketAdapter := ticket.NewGitHubAdapter(a.Owner, a.Repo, token, nil)
+				scmAdapter := scm.NewGitHubAdapter(a.Owner, a.Repo, token, nil)
+				syncSvc.TicketAdapter = ticketAdapter
+				syncSvc.SCMAdapter = scmAdapter
+				break // first github adapter only for now
+			}
+		}
+	}
 
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
