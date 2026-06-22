@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createRoute, useNavigate, Link } from '@tanstack/react-router';
+import { createRoute, useNavigate, useSearch, Link } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
 import { useAuth } from '../auth/AuthContext';
 
@@ -8,6 +8,9 @@ import { useAuth } from '../auth/AuthContext';
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  validateSearch: (search: Record<string, unknown>) => ({
+    redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+  }),
   component: LoginPage,
 });
 
@@ -47,6 +50,7 @@ function parseApiError(body: string): string | undefined {
  */
 export function LoginPage() {
   const navigate = useNavigate();
+  const { redirect } = useSearch({ from: '/login' });
   const { login } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -78,7 +82,7 @@ export function LoginPage() {
       }
 
       login(data.token);
-      await navigate({ to: '/' });
+      await navigate({ to: redirect || '/' });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'An unexpected error occurred';
@@ -186,7 +190,7 @@ export function LoginPage() {
         <p className="mt-4 text-center text-sm text-gray-600">
           Don&apos;t have an account?{' '}
           <Link
-            to="/register"
+            to="/register" search={{ redirect: undefined }}
             className="font-medium text-blue-600 hover:text-blue-800"
           >
             Create one
