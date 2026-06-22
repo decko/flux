@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
@@ -13,12 +14,27 @@ import (
 // repository errors with additional context.
 // Pipeline runs are immutable records; there is no Delete method.
 type PipelineRunService struct {
-	repo repository.PipelineRunRepository
+	repo         repository.PipelineRunRepository
+	orchestrator *orchestrator.OrchestratorAdapter
+}
+
+// PipelineRunServiceOption configures a PipelineRunService.
+type PipelineRunServiceOption func(*PipelineRunService)
+
+// WithOrchestrator sets the orchestrator adapter for trigger and cancel operations.
+func WithOrchestrator(adapter orchestrator.OrchestratorAdapter) PipelineRunServiceOption {
+	return func(s *PipelineRunService) {
+		s.orchestrator = &adapter
+	}
 }
 
 // NewPipelineRunService creates a new PipelineRunService backed by the given repository.
-func NewPipelineRunService(repo repository.PipelineRunRepository) *PipelineRunService {
-	return &PipelineRunService{repo: repo}
+func NewPipelineRunService(repo repository.PipelineRunRepository, opts ...PipelineRunServiceOption) *PipelineRunService {
+	s := &PipelineRunService{repo: repo}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Create validates the pipeline run and persists it.
@@ -61,6 +77,52 @@ func (s *PipelineRunService) Update(ctx context.Context, run model.PipelineRun) 
 	}
 	if err := s.repo.Update(ctx, run); err != nil {
 		return fmt.Errorf("update pipeline run: %w", err)
+	}
+	return nil
+}
+
+// Trigger initiates execution of a pipeline run by notifying the orchestrator.
+// It fetches the run by ID, delegates to the orchestrator's Trigger method,
+// sets the run status to running, and persists the update.
+// Returns ErrNotFound if the pipeline run does not exist.
+// Returns an error if no orchestrator adapter is configured.
+func (s *PipelineRunService) Trigger(ctx context.Context, runID string) error {
+	if s.orchestrator == nil {
+		return fmt.Errorf("orchestrator not configured")
+	}
+	run, err := s.repo.Get(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("trigger pipeline run: %w", err)
+	}
+	if err := (*s.orchestrator).Trigger(ctx, run); err != nil {
+		return fmt.Errorf("trigger pipeline run: %w", err)
+	}
+	run.Status = model.RunStatusRunning
+	if err := s.repo.Update(ctx, run); err != nil {
+		return fmt.Errorf("trigger pipeline run: %w", err)
+	}
+	return nil
+}
+
+// Cancel stops execution of a pipeline run by notifying the orchestrator.
+// It fetches the run by ID, delegates to the orchestrator's Cancel method,
+// sets the run status to canceled, and persists the update.
+// Returns ErrNotFound if the pipeline run does not exist.
+// Returns an error if no orchestrator adapter is configured.
+func (s *PipelineRunService) Cancel(ctx context.Context, runID string) error {
+	if s.orchestrator == nil {
+		return fmt.Errorf("orchestrator not configured")
+	}
+	run, err := s.repo.Get(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("cancel pipeline run: %w", err)
+	}
+	if err := (*s.orchestrator).Cancel(ctx, runID); err != nil {
+		return fmt.Errorf("cancel pipeline run: %w", err)
+	}
+	run.Status = model.RunStatusCanceled
+	if err := s.repo.Update(ctx, run); err != nil {
+		return fmt.Errorf("cancel pipeline run: %w", err)
 	}
 	return nil
 }

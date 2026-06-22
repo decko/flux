@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
@@ -61,6 +62,42 @@ func (r *mockPipelineRunRepo) Update(_ context.Context, run model.PipelineRun) e
 		return repository.ErrNotFound
 	}
 	r.store[run.ID] = run
+	return nil
+}
+
+// ─── Stub: OrchestratorAdapter ──────────────────────────────────────────────
+
+type stubOrchestrator struct {
+	mu           sync.Mutex
+	triggeredIDs []string
+	canceledIDs  []string
+}
+
+func (s *stubOrchestrator) Name() string { return "stub" }
+
+func (s *stubOrchestrator) Trigger(_ context.Context, run model.PipelineRun) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.triggeredIDs = append(s.triggeredIDs, run.ID)
+	return nil
+}
+
+func (s *stubOrchestrator) Cancel(_ context.Context, runID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.canceledIDs = append(s.canceledIDs, runID)
+	return nil
+}
+
+func (s *stubOrchestrator) Status(_ context.Context, _ string) (*model.PipelineRun, error) {
+	return nil, nil
+}
+
+func (s *stubOrchestrator) Logs(_ context.Context, _ string) (<-chan orchestrator.LogEntry, error) {
+	return nil, nil
+}
+
+func (s *stubOrchestrator) Health(_ context.Context) error {
 	return nil
 }
 
@@ -239,6 +276,104 @@ func TestPipelineRunService_Update_NotFound(t *testing.T) {
 	run := testPipelineRun("nonexistent", "proj-1", "ticket-1", model.RunStatusPending)
 
 	err := svc.Update(ctx, run)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// ─── Trigger ─────────────────────────────────────────────────────────────────
+
+func TestPipelineRunService_Trigger(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	orch := &stubOrchestrator{}
+	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
+	ctx := context.Background()
+
+	run := testPipelineRun("run-1", "proj-1", "ticket-1", model.RunStatusPending)
+	must(t, svc.Create(ctx, run))
+
+	err := svc.Trigger(ctx, "run-1")
+	must(t, err)
+
+	// Verify status was updated to running.
+	got, err := svc.Get(ctx, "run-1")
+	must(t, err)
+	if got.Status != model.RunStatusRunning {
+		t.Errorf("got Status %q, want %q", got.Status, model.RunStatusRunning)
+	}
+
+	// Verify adapter.Trigger was called.
+	orch.mu.Lock()
+	triggered := len(orch.triggeredIDs) == 1 && orch.triggeredIDs[0] == "run-1"
+	orch.mu.Unlock()
+	if !triggered {
+		t.Errorf("expected adapter.Trigger to be called with run-1; calls: %v", orch.triggeredIDs)
+	}
+}
+
+func TestPipelineRunService_Trigger_NotFound(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	orch := &stubOrchestrator{}
+	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
+	ctx := context.Background()
+
+	err := svc.Trigger(ctx, "nonexistent")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestPipelineRunService_Trigger_NoOrchestrator(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	svc := domain.NewPipelineRunService(repo) // no orchestrator
+	ctx := context.Background()
+
+	run := testPipelineRun("run-1", "proj-1", "ticket-1", model.RunStatusPending)
+	must(t, svc.Create(ctx, run))
+
+	err := svc.Trigger(ctx, "run-1")
+	if err == nil {
+		t.Fatal("expected error when orchestrator is not configured, got nil")
+	}
+}
+
+// ─── Cancel ──────────────────────────────────────────────────────────────────
+
+func TestPipelineRunService_Cancel(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	orch := &stubOrchestrator{}
+	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
+	ctx := context.Background()
+
+	run := testPipelineRun("run-1", "proj-1", "ticket-1", model.RunStatusRunning)
+	must(t, svc.Create(ctx, run))
+
+	err := svc.Cancel(ctx, "run-1")
+	must(t, err)
+
+	// Verify status was updated to canceled.
+	got, err := svc.Get(ctx, "run-1")
+	must(t, err)
+	if got.Status != model.RunStatusCanceled {
+		t.Errorf("got Status %q, want %q", got.Status, model.RunStatusCanceled)
+	}
+
+	// Verify adapter.Cancel was called.
+	orch.mu.Lock()
+	canceled := len(orch.canceledIDs) == 1 && orch.canceledIDs[0] == "run-1"
+	orch.mu.Unlock()
+	if !canceled {
+		t.Errorf("expected adapter.Cancel to be called with run-1; calls: %v", orch.canceledIDs)
+	}
+}
+
+func TestPipelineRunService_Cancel_NotFound(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	orch := &stubOrchestrator{}
+	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
+	ctx := context.Background()
+
+	err := svc.Cancel(ctx, "nonexistent")
 	if !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
