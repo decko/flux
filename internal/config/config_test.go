@@ -18,8 +18,8 @@ func TestDefaults(t *testing.T) {
 	if cfg.Server.Port != 8080 {
 		t.Errorf("Server.Port = %d, want %d", cfg.Server.Port, 8080)
 	}
-	if cfg.Database.Path != ":memory:" {
-		t.Errorf("Database.Path = %q, want %q", cfg.Database.Path, ":memory:")
+	if cfg.Database.Path != "flux.db" {
+		t.Errorf("Database.Path = %q, want %q", cfg.Database.Path, "flux.db")
 	}
 	if cfg.CORS.Origin != "*" {
 		t.Errorf("CORS.Origin = %q, want %q", cfg.CORS.Origin, "*")
