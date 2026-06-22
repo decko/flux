@@ -40,7 +40,7 @@ function mockFetchSequence(
 }
 
 describe('api client', () => {
-  let tokenCallback: ((token: string | null) => void) | null = null;
+  let tokenCallback: string | null = null;
 
   beforeEach(() => {
     localStorage.clear();

@@ -100,7 +100,7 @@ async function executeRequest<T>(
   method: string,
   path: string,
   body?: unknown,
-  isRetry: boolean,
+  isRetry = false,
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
   const headers: Record<string, string> = {
