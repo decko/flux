@@ -26,7 +26,8 @@ describe('App', () => {
   it('renders the navigation bar with all links', async () => {
     await renderWithRouter();
 
-    expect(screen.getByRole('link', { name: 'Flux' })).toBeInTheDocument();
+    expect(screen.getByText('Flux')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Projects' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Tickets' })).toBeInTheDocument();
     expect(

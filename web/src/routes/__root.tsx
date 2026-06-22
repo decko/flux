@@ -1,31 +1,84 @@
 import { Link, Outlet, createRootRoute } from '@tanstack/react-router';
+import { useState } from 'react';
 
 export const Route = createRootRoute({
   component: RootLayout,
 });
 
+interface NavItem {
+  to: string;
+  label: string;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { to: '/', label: 'Dashboard' },
+  { to: '/projects', label: 'Projects' },
+  { to: '/tickets', label: 'Tickets' },
+  { to: '/pull-requests', label: 'Pull Requests' },
+  { to: '/pipeline-runs', label: 'Pipeline Runs' },
+];
+
 function RootLayout() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
-          <Link to="/" className="text-lg font-bold text-gray-900">
-            Flux
-          </Link>
-          <Link to="/projects" className="text-sm text-gray-600 hover:text-gray-900">
-            Projects
-          </Link>
-          <Link to="/tickets" className="text-sm text-gray-600 hover:text-gray-900">
-            Tickets
-          </Link>
-          <Link to="/pull-requests" className="text-sm text-gray-600 hover:text-gray-900">
-            Pull Requests
-          </Link>
-          <Link to="/pipeline-runs" className="text-sm text-gray-600 hover:text-gray-900">
-            Pipeline Runs
-          </Link>
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+          <span className="text-lg font-bold text-gray-900">Flux</span>
+
+          {/* Desktop nav links */}
+          <div className="hidden md:flex md:items-center md:gap-6">
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                activeProps={{ className: 'text-blue-600 font-semibold' }}
+                className="text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+
+          {/* Mobile hamburger button */}
+          <button
+            type="button"
+            className="rounded-md p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900 md:hidden"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileMenuOpen}
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              {mobileMenuOpen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              )}
+            </svg>
+          </button>
         </div>
+
+        {/* Mobile nav panel */}
+        {mobileMenuOpen && (
+          <div className="border-t border-gray-200 md:hidden">
+            <div className="space-y-1 px-4 py-3">
+              {NAV_ITEMS.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  activeProps={{ className: 'text-blue-600 font-semibold' }}
+                  className="block text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </nav>
+
       <main className="mx-auto max-w-7xl px-4 py-6">
         <Outlet />
       </main>
