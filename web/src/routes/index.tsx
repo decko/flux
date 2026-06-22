@@ -1,10 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, redirect } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
 
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  beforeLoad: ({ location }) => {
+    const token = localStorage.getItem('flux_token');
+    if (!token) {
+      throw redirect({ to: '/login', search: { redirect: location.href } });
+    }
+  },
   component: Dashboard,
 });
 
