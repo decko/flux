@@ -231,14 +231,19 @@ type PipelineRunRepository interface {
 ### Ticket sync
 
 ```
-[GitHub] --webhook/poll--> [TicketAdapter] --> [TicketService] --> [Repository] --> [DB]
-                                                                          |
-                                                                          v
-                                                                   [Event Bus]
-                                                                          |
-                                                                          v
-                                                                   [WebSocket] --> [Frontend]
+[GitHub] --webhook/poll--> [TicketAdapter] ──┐
+                                              ├──> [SyncService] --> [Repository] --> [DB]
+[GitHub] --webhook/poll--> [SCMAdapter] ──────┘                              |
+                                                                              v
+                                                                       [Event Bus]
+                                                                              |
+                                                                              v
+                                                                       [WebSocket] --> [Frontend]
 ```
+
+SyncService periodically polls both adapters and upserts tickets and pull
+requests into the local repository. It supports both scheduled (Run) and
+one-shot (SyncNow) synchronization with error isolation between adapters.
 
 ### Pipeline execution
 
