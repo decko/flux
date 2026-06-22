@@ -132,7 +132,7 @@ function TicketsPage() {
         onSourceChange={(v) => setFilter('source', v)}
       />
 
-      {items.length === 0 ? (
+      {!items?.length ? (
         <EmptyState />
       ) : (
         <div className="mt-4 space-y-3">

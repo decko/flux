@@ -137,10 +137,10 @@ export function Dashboard() {
   }
 
   // --- Success state ---
-  const projectCount = projectsQuery.data?.length ?? 0;
-  const ticketCount = ticketsQuery.data?.length ?? 0;
-  const pullRequestCount = pullRequestsQuery.data?.length ?? 0;
-  const pipelineRunCount = pipelineRunsQuery.data?.length ?? 0;
+  const projectCount = (projectsQuery.data as { items?: unknown[] })?.items?.length ?? 0;
+  const ticketCount = (ticketsQuery.data as { items?: unknown[] })?.items?.length ?? 0;
+  const pullRequestCount = (pullRequestsQuery.data as { items?: unknown[] })?.items?.length ?? 0;
+  const pipelineRunCount = (pipelineRunsQuery.data as { items?: unknown[] })?.items?.length ?? 0;
 
   return (
     <div>
