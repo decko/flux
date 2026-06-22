@@ -49,6 +49,6 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { name: 'Projects' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Manage your projects.')).toBeInTheDocument();
+    expect(screen.getByText('Create Project')).toBeInTheDocument();
   });
 });
