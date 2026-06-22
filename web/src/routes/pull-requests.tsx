@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, redirect } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -41,6 +41,12 @@ interface PullRequestsSearch {
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pull-requests',
+  beforeLoad: ({ location }) => {
+    const token = localStorage.getItem('flux_token');
+    if (!token) {
+      throw redirect({ to: '/login', search: { redirect: location.href } });
+    }
+  },
   validateSearch: (search: Record<string, unknown>): PullRequestsSearch => ({
     status: typeof search.status === 'string' ? search.status : undefined,
   }),

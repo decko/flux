@@ -1,11 +1,17 @@
 import { useState } from 'react';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, redirect } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
 import { PipelineRunList } from '../components/PipelineRunList';
 
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pipeline-runs',
+  beforeLoad: ({ location }) => {
+    const token = localStorage.getItem('flux_token');
+    if (!token) {
+      throw redirect({ to: '/login', search: { redirect: location.href } });
+    }
+  },
   component: PipelineRunsPage,
 });
 

@@ -2,8 +2,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createAppRouter } from '../router';
+import { AuthProvider } from '../auth/AuthContext';
 
 async function renderWithRouter(initialPath = '/') {
   const queryClient = new QueryClient();
@@ -16,12 +17,17 @@ async function renderWithRouter(initialPath = '/') {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </QueryClientProvider>,
   );
 }
 
 describe('RootLayout navigation', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
   it('renders all 5 nav links with correct labels', async () => {
     await renderWithRouter();
 
@@ -37,6 +43,7 @@ describe('RootLayout navigation', () => {
   });
 
   it('applies active styling to the current route link', async () => {
+    localStorage.setItem('flux_token', 'test-token');
     await renderWithRouter('/projects');
 
     const projectsLink = screen.getByRole('link', { name: 'Projects' });
@@ -99,5 +106,51 @@ describe('RootLayout navigation', () => {
     expect(
       container.querySelector('.border-t.border-gray-200'),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('RootLayout auth links', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('shows Login link when no token is present', async () => {
+    await renderWithRouter();
+
+    expect(screen.getByRole('link', { name: 'Login' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Logout' })).not.toBeInTheDocument();
+  });
+
+  it('shows Logout button when token is present', async () => {
+    localStorage.setItem('flux_token', 'test-token');
+
+    await renderWithRouter();
+
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Login' })).not.toBeInTheDocument();
+  });
+
+  it('Logout click clears token from localStorage', async () => {
+    localStorage.setItem('flux_token', 'test-token');
+
+    await renderWithRouter();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
+
+    expect(localStorage.getItem('flux_token')).toBeNull();
+  });
+
+  it('Logout click reveals Login link', async () => {
+    localStorage.setItem('flux_token', 'test-token');
+
+    await renderWithRouter();
+
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Login' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Logout' }));
+
+    expect(screen.getByRole('link', { name: 'Login' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Logout' })).not.toBeInTheDocument();
   });
 });
