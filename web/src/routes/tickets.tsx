@@ -232,7 +232,7 @@ function TicketCard({ ticket }: TicketCardProps) {
           </div>
           <h3 className="mt-1 text-sm font-medium text-gray-900">{ticket.title}</h3>
 
-          {ticket.labels.length > 0 && (
+          {ticket.labels?.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1">
               {ticket.labels.map((label) => (
                 <span
@@ -247,11 +247,11 @@ function TicketCard({ ticket }: TicketCardProps) {
         </div>
 
         <div className="ml-4 flex shrink-0 items-start gap-3 text-xs text-gray-400">
-          {ticket.relationships.length > 0 && (
-            <span>{ticket.relationships.length} relationship{ticket.relationships.length !== 1 ? 's' : ''}</span>
+          {ticket.relationships?.length > 0 && (
+            <span>{ticket.relationships?.length} relationship{ticket.relationships?.length !== 1 ? 's' : ''}</span>
           )}
-          {ticket.prs.length > 0 && (
-            <span>{ticket.prs.length} PR{ticket.prs.length !== 1 ? 's' : ''}</span>
+          {ticket.prs?.length > 0 && (
+            <span>{ticket.prs?.length} PR{ticket.prs?.length !== 1 ? 's' : ''}</span>
           )}
         </div>
       </div>
