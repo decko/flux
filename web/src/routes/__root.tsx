@@ -1,5 +1,6 @@
-import { Link, Outlet, createRootRoute } from '@tanstack/react-router';
+import { Link, Outlet, createRootRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -20,6 +21,13 @@ const NAV_ITEMS: NavItem[] = [
 
 function RootLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    logout();
+    navigate({ to: '/login' });
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -27,7 +35,7 @@ function RootLayout() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <span className="text-lg font-bold text-gray-900">Flux</span>
 
-          {/* Desktop nav links */}
+          {/* Desktop nav links + auth */}
           <div className="hidden md:flex md:items-center md:gap-6">
             {NAV_ITEMS.map((item) => (
               <Link
@@ -39,6 +47,24 @@ function RootLayout() {
                 {item.label}
               </Link>
             ))}
+            <span className="border-l border-gray-200 pl-6">
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
+                >
+                  Logout
+                </button>
+              ) : (
+                <Link
+                  to="/login"
+                  className="text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
+                >
+                  Login
+                </Link>
+              )}
+            </span>
           </div>
 
           {/* Mobile hamburger button */}
@@ -74,6 +100,26 @@ function RootLayout() {
                   {item.label}
                 </Link>
               ))}
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className="block text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
+                >
+                  Logout
+                </button>
+              ) : (
+                <Link
+                  to="/login"
+                  className="block text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Login
+                </Link>
+              )}
             </div>
           </div>
         )}

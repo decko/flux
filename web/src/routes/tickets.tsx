@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { createRoute, useNavigate, useSearch } from '@tanstack/react-router';
+import { createRoute, redirect, useNavigate, useSearch } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -44,6 +44,12 @@ interface TicketsSearch {
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: '/tickets',
+  beforeLoad: ({ location }) => {
+    const token = localStorage.getItem('flux_token');
+    if (!token) {
+      throw redirect({ to: '/login', search: { redirect: location.href } });
+    }
+  },
   component: TicketsPage,
   validateSearch: (search: Record<string, unknown>): TicketsSearch => ({
     status: (search.status as TicketStatus) || undefined,

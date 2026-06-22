@@ -8,9 +8,13 @@ import { Route as projectsRoute } from './routes/projects';
 import { Route as ticketsRoute } from './routes/tickets';
 import { Route as pullRequestsRoute } from './routes/pull-requests';
 import { Route as pipelineRunsRoute } from './routes/pipeline-runs';
+import { Route as loginRoute } from './routes/login';
+import { Route as registerRoute } from './routes/register';
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  loginRoute,
+  registerRoute,
   projectsRoute,
   ticketsRoute,
   pullRequestsRoute,

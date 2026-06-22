@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, redirect } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
 
 // --- Types matching the Go model (internal/model/project.go) ---
@@ -33,6 +33,12 @@ interface CreateProjectInput {
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: '/projects',
+  beforeLoad: ({ location }) => {
+    const token = localStorage.getItem('flux_token');
+    if (!token) {
+      throw redirect({ to: '/login', search: { redirect: location.href } });
+    }
+  },
   component: ProjectsPage,
 });
 

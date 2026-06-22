@@ -2,9 +2,10 @@ import { render, screen } from '@testing-library/react';
 import { RouterProvider } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createAppRouter } from './router';
 import { createMemoryHistory } from '@tanstack/react-router';
+import { AuthProvider } from './auth/AuthContext';
 
 async function renderWithRouter(initialPath = '/') {
   const queryClient = new QueryClient();
@@ -17,12 +18,18 @@ async function renderWithRouter(initialPath = '/') {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </QueryClientProvider>,
   );
 }
 
 describe('App', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it('renders the navigation bar with all links', async () => {
     await renderWithRouter();
 
@@ -46,6 +53,7 @@ describe('App', () => {
   });
 
   it('renders the projects page content', async () => {
+    localStorage.setItem('flux_token', 'test-token');
     await renderWithRouter('/projects');
     expect(
       screen.getByRole('heading', { name: 'Projects' }),

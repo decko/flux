@@ -5,6 +5,7 @@ import { RouterProvider, createMemoryHistory } from '@tanstack/react-router';
 import { act } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAppRouter } from '../router';
+import { AuthProvider } from '../auth/AuthContext';
 
 // ─── Integration test helper ─────────────────────────────────────────────
 
@@ -24,7 +25,9 @@ async function renderAt(path = '/tickets') {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </QueryClientProvider>,
   );
 }
@@ -107,12 +110,14 @@ describe('TicketsPage', () => {
   let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    localStorage.setItem('flux_token', 'test-token');
     mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   // --- Loading state ---
