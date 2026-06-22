@@ -43,6 +43,8 @@ func (s *Server) registerRoutes() {
 			r.Get("/pipeline-runs", s.handleListPipelineRuns)
 			r.Post("/pipeline-runs", s.handleCreatePipelineRun)
 			r.Get("/pipeline-runs/{id}", s.handleGetPipelineRun)
+			r.Post("/pipeline-runs/{id}/trigger", s.handleTriggerPipelineRun)
+			r.Post("/pipeline-runs/{id}/cancel", s.handleCancelPipelineRun)
 
 			r.Get("/sync/status", s.handleSyncStatus)
 			r.Post("/sync/trigger", s.handleSyncTrigger)

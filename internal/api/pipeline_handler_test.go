@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
@@ -40,6 +42,86 @@ func setupPipelineServer(t *testing.T) (*Server, func(t *testing.T, run model.Pi
 	}
 
 	svc := domain.NewPipelineRunService(repo)
+	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPipelineService(svc))
+
+	seed := func(t *testing.T, run model.PipelineRun) model.PipelineRun {
+		t.Helper()
+		if run.ID == "" {
+			run.ID = uuid.NewString()
+		}
+		if run.Status == "" {
+			run.Status = model.RunStatusPending
+		}
+		if run.StartedAt.IsZero() {
+			run.StartedAt = time.Now().UTC().Truncate(time.Second)
+		}
+		if err := svc.Create(context.Background(), run); err != nil {
+			t.Fatalf("failed to seed pipeline run: %v", err)
+		}
+		return run
+	}
+
+	return srv, seed
+}
+
+// ─── Stub: OrchestratorAdapter ──────────────────────────────────────────────
+
+type stubOrchestrator struct {
+	mu           sync.Mutex
+	triggeredIDs []string
+	canceledIDs  []string
+}
+
+func (s *stubOrchestrator) Name() string { return "stub" }
+
+func (s *stubOrchestrator) Trigger(_ context.Context, run model.PipelineRun) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.triggeredIDs = append(s.triggeredIDs, run.ID)
+	return nil
+}
+
+func (s *stubOrchestrator) Cancel(_ context.Context, runID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.canceledIDs = append(s.canceledIDs, runID)
+	return nil
+}
+
+func (s *stubOrchestrator) Status(_ context.Context, _ string) (*model.PipelineRun, error) {
+	return nil, nil
+}
+
+func (s *stubOrchestrator) Logs(_ context.Context, _ string) (<-chan orchestrator.LogEntry, error) {
+	return nil, nil
+}
+
+func (s *stubOrchestrator) Health(_ context.Context) error {
+	return nil
+}
+
+// setupPipelineServerWithOrch creates an in-memory SQLite database, migrates it,
+// creates a PipelineRunService with the given orchestrator, and returns the
+// server along with a seed function for populating pipeline runs.
+func setupPipelineServerWithOrch(t *testing.T, orch orchestrator.OrchestratorAdapter) (*Server, func(t *testing.T, run model.PipelineRun) model.PipelineRun) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open in-memory SQLite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		t.Fatalf("failed to configure SQLite: %v", err)
+	}
+
+	repo := repository.NewSQLitePipelineRunRepository(db)
+	if err := repo.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to run migration: %v", err)
+	}
+
+	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPipelineService(svc))
 
 	seed := func(t *testing.T, run model.PipelineRun) model.PipelineRun {
@@ -516,5 +598,123 @@ func TestPipelineRunMethodNotAllowed(t *testing.T) {
 				t.Error("JSON response missing 'error' field")
 			}
 		})
+	}
+}
+
+// ─── Trigger / Cancel ───────────────────────────────────────────────────────
+
+func TestHandleTriggerPipelineRun(t *testing.T) {
+	orch := &stubOrchestrator{}
+	srv, seed := setupPipelineServerWithOrch(t, orch)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	run := seed(t, model.PipelineRun{
+		ProjectID:    "proj-1",
+		TicketID:     "ticket-1",
+		Orchestrator: "soda",
+		Pipeline:     "plan",
+		Status:       model.RunStatusPending,
+	})
+
+	u := fmt.Sprintf("%s/api/v1/pipeline-runs/%s/trigger", ts.URL, run.ID)
+	req := authedRequest(http.MethodPost, u, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", u, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusAccepted)
+	}
+
+	// Verify the orchestrator was called with the correct run ID.
+	orch.mu.Lock()
+	triggered := len(orch.triggeredIDs) == 1 && orch.triggeredIDs[0] == run.ID
+	orch.mu.Unlock()
+	if !triggered {
+		t.Errorf("expected orchestrator.Trigger to be called with %q; calls: %v", run.ID, orch.triggeredIDs)
+	}
+}
+
+func TestHandleTriggerPipelineRun_NotFound(t *testing.T) {
+	orch := &stubOrchestrator{}
+	srv, _ := setupPipelineServerWithOrch(t, orch)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	u := fmt.Sprintf("%s/api/v1/pipeline-runs/%s/trigger", ts.URL, uuid.NewString())
+	req := authedRequest(http.MethodPost, u, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", u, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestHandleCancelPipelineRun(t *testing.T) {
+	orch := &stubOrchestrator{}
+	srv, seed := setupPipelineServerWithOrch(t, orch)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	run := seed(t, model.PipelineRun{
+		ProjectID:    "proj-1",
+		TicketID:     "ticket-1",
+		Orchestrator: "soda",
+		Pipeline:     "plan",
+		Status:       model.RunStatusRunning,
+	})
+
+	u := fmt.Sprintf("%s/api/v1/pipeline-runs/%s/cancel", ts.URL, run.ID)
+	req := authedRequest(http.MethodPost, u, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", u, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	// Verify the orchestrator was called with the correct run ID.
+	orch.mu.Lock()
+	canceled := len(orch.canceledIDs) == 1 && orch.canceledIDs[0] == run.ID
+	orch.mu.Unlock()
+	if !canceled {
+		t.Errorf("expected orchestrator.Cancel to be called with %q; calls: %v", run.ID, orch.canceledIDs)
+	}
+}
+
+func TestHandleTriggerPipelineRun_Unauthorized(t *testing.T) {
+	orch := &stubOrchestrator{}
+	srv, seed := setupPipelineServerWithOrch(t, orch)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	run := seed(t, model.PipelineRun{
+		ProjectID:    "proj-1",
+		TicketID:     "ticket-1",
+		Orchestrator: "soda",
+		Pipeline:     "plan",
+	})
+
+	// No Authorization header — should be rejected.
+	u := fmt.Sprintf("%s/api/v1/pipeline-runs/%s/trigger", ts.URL, run.ID)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, u, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", u, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 	}
 }

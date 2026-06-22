@@ -106,3 +106,43 @@ func (s *Server) handleCreatePipelineRun(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(run)
 }
+
+// handleTriggerPipelineRun handles POST /api/v1/pipeline-runs/{id}/trigger.
+// It delegates to the pipeline run service to notify the orchestrator and
+// set the run status to running. Returns 202 Accepted on success.
+func (s *Server) handleTriggerPipelineRun(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := s.pipelineSvc.Trigger(r.Context(), id); err != nil {
+		code, msg := serviceError(err)
+		if code == http.StatusInternalServerError {
+			slog.Error("trigger pipeline run", "error", err, "request_id", middleware.GetReqID(r.Context()))
+		}
+		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+}
+
+// handleCancelPipelineRun handles POST /api/v1/pipeline-runs/{id}/cancel.
+// It delegates to the pipeline run service to notify the orchestrator and
+// set the run status to canceled. Returns 200 OK on success.
+func (s *Server) handleCancelPipelineRun(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := s.pipelineSvc.Cancel(r.Context(), id); err != nil {
+		code, msg := serviceError(err)
+		if code == http.StatusInternalServerError {
+			slog.Error("cancel pipeline run", "error", err, "request_id", middleware.GetReqID(r.Context()))
+		}
+		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "canceled"})
+}
