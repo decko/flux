@@ -1,5 +1,14 @@
 const API_BASE = '/api/v1';
 
+/** Retrieve the stored JWT token, if any. */
+function getToken(): string | null {
+  try {
+    return localStorage.getItem('flux_token');
+  } catch {
+    return null;
+  }
+}
+
 class ApiError extends Error {
   status: number;
 
@@ -16,12 +25,16 @@ async function request<T>(
   body?: unknown,
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
-  const options: RequestInit = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-    },
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
   };
+
+  const token = getToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const options: RequestInit = { method, headers };
 
   if (body !== undefined) {
     options.body = JSON.stringify(body);
