@@ -3,6 +3,7 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -23,6 +24,9 @@ type Server struct {
 	prSvc       *domain.PullRequestService
 	pipelineSvc *domain.PipelineRunService
 	authSvc     *domain.AuthService
+	syncSvc     syncService
+	syncMu      sync.Mutex
+	adapters    map[string]domain.AdapterInfo
 }
 
 // ServerOption configures a Server.
@@ -86,6 +90,20 @@ func WithPipelineService(svc *domain.PipelineRunService) ServerOption {
 func WithAuthService(svc *domain.AuthService) ServerOption {
 	return func(s *Server) {
 		s.authSvc = svc
+	}
+}
+
+// WithSyncService injects the sync service for sync management endpoints.
+func WithSyncService(svc syncService) ServerOption {
+	return func(s *Server) {
+		s.syncSvc = svc
+	}
+}
+
+// WithAdapters injects configured adapter metadata for listing and health checks.
+func WithAdapters(adapters map[string]domain.AdapterInfo) ServerOption {
+	return func(s *Server) {
+		s.adapters = adapters
 	}
 }
 

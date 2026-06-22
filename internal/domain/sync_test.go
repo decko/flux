@@ -257,8 +257,8 @@ func TestNewSyncService(t *testing.T) {
 
 	// Status should be zero-valued before any sync.
 	status := svc.Status()
-	if !status.LastSyncAt.IsZero() {
-		t.Errorf("expected zero LastSyncAt, got %v", status.LastSyncAt)
+	if status.LastSyncAt != nil {
+		t.Errorf("expected nil LastSyncAt, got %v", *status.LastSyncAt)
 	}
 	if status.LastSyncError != "" {
 		t.Errorf("expected empty LastSyncError, got %q", status.LastSyncError)
@@ -316,7 +316,7 @@ func TestSyncService_SyncNow_Tickets(t *testing.T) {
 	if status.PRsSynced != 0 {
 		t.Errorf("got PRsSynced %d, want 0", status.PRsSynced)
 	}
-	if status.LastSyncAt.IsZero() {
+	if status.LastSyncAt == nil {
 		t.Error("expected non-zero LastSyncAt")
 	}
 }
@@ -563,8 +563,8 @@ func TestSyncService_Status(t *testing.T) {
 
 	// Status before sync.
 	before := svc.Status()
-	if !before.LastSyncAt.IsZero() {
-		t.Error("expected zero LastSyncAt before first sync")
+	if before.LastSyncAt != nil {
+		t.Error("expected nil LastSyncAt before first sync")
 	}
 
 	beforeSync := time.Now()
@@ -573,11 +573,11 @@ func TestSyncService_Status(t *testing.T) {
 	afterSync := time.Now()
 
 	after := svc.Status()
-	if after.LastSyncAt.IsZero() {
+	if after.LastSyncAt == nil {
 		t.Error("expected non-zero LastSyncAt after sync")
 	}
-	if after.LastSyncAt.Before(beforeSync) || after.LastSyncAt.After(afterSync) {
-		t.Errorf("LastSyncAt %v should be between %v and %v", after.LastSyncAt, beforeSync, afterSync)
+	if after.LastSyncAt != nil && ((*after.LastSyncAt).Before(beforeSync) || (*after.LastSyncAt).After(afterSync)) {
+		t.Errorf("LastSyncAt %v should be between %v and %v", *after.LastSyncAt, beforeSync, afterSync)
 	}
 	if after.TicketsSynced != 1 {
 		t.Errorf("got TicketsSynced %d, want 1", after.TicketsSynced)

@@ -19,6 +19,7 @@ func TestSetupServer_Success(t *testing.T) {
 		Database: config.DatabaseConfig{Path: ":memory:"},
 		CORS:     config.CORSConfig{Origin: "*"},
 		Logging:  config.LoggingConfig{Level: "info"},
+		Sync:     config.SyncConfig{Interval: "5m"},
 	}
 
 	srv, cleanup, err := setupServer(ctx, cfg)
@@ -44,6 +45,7 @@ func TestSetupServer_HealthEndpoint(t *testing.T) {
 		Database: config.DatabaseConfig{Path: ":memory:"},
 		CORS:     config.CORSConfig{Origin: "*"},
 		Logging:  config.LoggingConfig{Level: "info"},
+		Sync:     config.SyncConfig{Interval: "5m"},
 	}
 
 	srv, cleanup, err := setupServer(ctx, cfg)
@@ -84,6 +86,7 @@ func TestSetupServer_InvalidDBPath(t *testing.T) {
 		Database: config.DatabaseConfig{Path: "/nonexistent/directory/flux.db"},
 		CORS:     config.CORSConfig{Origin: "*"},
 		Logging:  config.LoggingConfig{Level: "info"},
+		Sync:     config.SyncConfig{Interval: "5m"},
 	}
 
 	_, cleanup, err := setupServer(ctx, cfg)
