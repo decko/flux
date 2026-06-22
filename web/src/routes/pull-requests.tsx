@@ -187,7 +187,11 @@ function PullRequestsPage() {
       }
       const qs = params.toString();
       const url = `/api/v1/pull-requests${qs ? `?${qs}` : ''}`;
-      const res = await fetch(url);
+      const headers: Record<string, string> = {};
+      const token = localStorage.getItem('flux_token');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(url, { headers });
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
         throw new Error(body?.error ?? `Request failed with status ${res.status}`);

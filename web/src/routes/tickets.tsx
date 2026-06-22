@@ -67,7 +67,11 @@ async function fetchTickets(params: TicketsSearch): Promise<TicketPage> {
   const qs = searchParams.toString();
   const url = qs ? `/api/v1/tickets?${qs}` : '/api/v1/tickets';
 
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = localStorage.getItem('flux_token');
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(url, { headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || res.statusText);
