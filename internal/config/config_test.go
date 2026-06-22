@@ -470,9 +470,251 @@ func TestConfig_NoTokenInConfig(t *testing.T) {
 		LoggingConfig{},
 		AdapterEntry{},
 		SyncConfig{},
+		OrchestratorEntry{},
+		PipelineDef{},
 	}
 	for _, v := range types {
 		checkNoTokenField(t, v)
+	}
+}
+
+// ---- NEW TESTS for Issue #65: orchestrator configuration ----
+
+func TestConfig_OrchestratorParsing(t *testing.T) {
+	t.Parallel()
+
+	yamlData := []byte("orchestrators:\n  - type: soda\n    path: /usr/local/bin/soda\n    pipelines:\n      - name: default\n        config:\n          model: claude-sonnet\n")
+	var cfg Config
+	if err := yaml.Unmarshal(yamlData, &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal error = %v", err)
+	}
+	if len(cfg.Orchestrators) != 1 {
+		t.Fatalf("len(Orchestrators) = %d, want 1", len(cfg.Orchestrators))
+	}
+	if cfg.Orchestrators[0].Type != "soda" {
+		t.Errorf("Orchestrators[0].Type = %q, want %q", cfg.Orchestrators[0].Type, "soda")
+	}
+	if cfg.Orchestrators[0].Path != "/usr/local/bin/soda" {
+		t.Errorf("Orchestrators[0].Path = %q, want %q", cfg.Orchestrators[0].Path, "/usr/local/bin/soda")
+	}
+	if len(cfg.Orchestrators[0].Pipelines) != 1 {
+		t.Fatalf("len(Orchestrators[0].Pipelines) = %d, want 1", len(cfg.Orchestrators[0].Pipelines))
+	}
+	if cfg.Orchestrators[0].Pipelines[0].Name != "default" {
+		t.Errorf("Pipelines[0].Name = %q, want %q", cfg.Orchestrators[0].Pipelines[0].Name, "default")
+	}
+	if cfg.Orchestrators[0].Pipelines[0].Config["model"] != "claude-sonnet" {
+		t.Errorf("Pipelines[0].Config[\"model\"] = %q, want %q", cfg.Orchestrators[0].Pipelines[0].Config["model"], "claude-sonnet")
+	}
+}
+
+func TestConfig_OrchestratorDefaults(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`
+server:
+  port: 8080
+database:
+  path: ":memory:"
+cors:
+  origin: "*"
+logging:
+  level: info
+orchestrators:
+  - type: soda
+    pipelines:
+      - name: default
+`)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(cfg.Orchestrators) != 1 {
+		t.Fatalf("len(Orchestrators) = %d, want 1", len(cfg.Orchestrators))
+	}
+	if cfg.Orchestrators[0].Path != "soda" {
+		t.Errorf("Orchestrators[0].Path = %q, want %q (default)", cfg.Orchestrators[0].Path, "soda")
+	}
+}
+
+func TestConfig_OrchestratorEmptySlice(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Orchestrators == nil {
+		t.Error("Orchestrators is nil, want empty slice (not nil)")
+	}
+	if len(cfg.Orchestrators) != 0 {
+		t.Errorf("len(Orchestrators) = %d, want 0", len(cfg.Orchestrators))
+	}
+}
+
+func TestConfig_Validate_OrchestratorMissingType(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Orchestrators: []OrchestratorEntry{
+			{Type: ""},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected error for orchestrator with empty Type, got nil")
+	}
+}
+
+func TestConfig_Validate_OrchestratorUnknownType(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Orchestrators: []OrchestratorEntry{
+			{Type: "unknown"},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected error for unknown orchestrator type \"unknown\", got nil")
+	}
+}
+
+func TestConfig_Validate_OrchestratorPipelineMissingName(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Orchestrators: []OrchestratorEntry{
+			{
+				Type: "soda",
+				Pipelines: []PipelineDef{
+					{Name: ""},
+				},
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected error for pipeline with empty Name, got nil")
+	}
+}
+
+func TestConfig_FullConfigWithOrchestrators(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`
+server:
+  port: 9090
+database:
+  path: /tmp/test.db
+cors:
+  origin: http://localhost:3000
+logging:
+  level: debug
+adapters:
+  - type: github
+    owner: decko
+    repo: flux
+sync:
+  interval: 10m
+orchestrators:
+  - type: soda
+    path: /usr/local/bin/soda
+    pipelines:
+      - name: default
+        config:
+          model: claude-sonnet
+          max_iterations: "10"
+      - name: quick-fix
+        config:
+          model: claude-hyena
+`)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify existing fields still parse correctly.
+	if cfg.Server.Port != 9090 {
+		t.Errorf("Server.Port = %d, want %d", cfg.Server.Port, 9090)
+	}
+	if cfg.Database.Path != "/tmp/test.db" {
+		t.Errorf("Database.Path = %q, want %q", cfg.Database.Path, "/tmp/test.db")
+	}
+	if cfg.CORS.Origin != "http://localhost:3000" {
+		t.Errorf("CORS.Origin = %q, want %q", cfg.CORS.Origin, "http://localhost:3000")
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Errorf("Logging.Level = %q, want %q", cfg.Logging.Level, "debug")
+	}
+	if len(cfg.Adapters) != 1 {
+		t.Fatalf("len(Adapters) = %d, want 1", len(cfg.Adapters))
+	}
+	if cfg.Adapters[0].Type != "github" {
+		t.Errorf("Adapters[0].Type = %q, want %q", cfg.Adapters[0].Type, "github")
+	}
+	if cfg.Adapters[0].Owner != "decko" {
+		t.Errorf("Adapters[0].Owner = %q, want %q", cfg.Adapters[0].Owner, "decko")
+	}
+	if cfg.Adapters[0].Repo != "flux" {
+		t.Errorf("Adapters[0].Repo = %q, want %q", cfg.Adapters[0].Repo, "flux")
+	}
+	if cfg.Sync.Interval != "10m" {
+		t.Errorf("Sync.Interval = %q, want %q", cfg.Sync.Interval, "10m")
+	}
+
+	// Verify orchestrator fields.
+	if len(cfg.Orchestrators) != 1 {
+		t.Fatalf("len(Orchestrators) = %d, want 1", len(cfg.Orchestrators))
+	}
+	if cfg.Orchestrators[0].Type != "soda" {
+		t.Errorf("Orchestrators[0].Type = %q, want %q", cfg.Orchestrators[0].Type, "soda")
+	}
+	if cfg.Orchestrators[0].Path != "/usr/local/bin/soda" {
+		t.Errorf("Orchestrators[0].Path = %q, want %q", cfg.Orchestrators[0].Path, "/usr/local/bin/soda")
+	}
+	if len(cfg.Orchestrators[0].Pipelines) != 2 {
+		t.Fatalf("len(Orchestrators[0].Pipelines) = %d, want 2", len(cfg.Orchestrators[0].Pipelines))
+	}
+	if cfg.Orchestrators[0].Pipelines[0].Name != "default" {
+		t.Errorf("Pipelines[0].Name = %q, want %q", cfg.Orchestrators[0].Pipelines[0].Name, "default")
+	}
+	if cfg.Orchestrators[0].Pipelines[0].Config["model"] != "claude-sonnet" {
+		t.Errorf("Pipelines[0].Config[\"model\"] = %q, want %q", cfg.Orchestrators[0].Pipelines[0].Config["model"], "claude-sonnet")
+	}
+	if cfg.Orchestrators[0].Pipelines[0].Config["max_iterations"] != "10" {
+		t.Errorf("Pipelines[0].Config[\"max_iterations\"] = %q, want %q", cfg.Orchestrators[0].Pipelines[0].Config["max_iterations"], "10")
+	}
+	if cfg.Orchestrators[0].Pipelines[1].Name != "quick-fix" {
+		t.Errorf("Pipelines[1].Name = %q, want %q", cfg.Orchestrators[0].Pipelines[1].Name, "quick-fix")
+	}
+	if cfg.Orchestrators[0].Pipelines[1].Config["model"] != "claude-hyena" {
+		t.Errorf("Pipelines[1].Config[\"model\"] = %q, want %q", cfg.Orchestrators[0].Pipelines[1].Config["model"], "claude-hyena")
 	}
 }
 
