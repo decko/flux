@@ -14,6 +14,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/adapter/scm"
 	"github.com/decko/flux/internal/adapter/ticket"
 	"github.com/decko/flux/internal/api"
@@ -156,6 +157,16 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	ticketSvc := domain.NewTicketService(ticketRepo)
 	prSvc := domain.NewPullRequestService(prRepo)
 	pipelineSvc := domain.NewPipelineRunService(pipelineRepo)
+
+	// Wire soda orchestrator if configured.
+	for _, o := range cfg.Orchestrators {
+		if o.Type == "soda" {
+			slog.Info("configuring soda orchestrator", "path", o.Path)
+			pipelineSvc = domain.NewPipelineRunService(pipelineRepo,
+				domain.WithOrchestrator(orchestrator.NewSodaAdapter(o.Path)))
+			break
+		}
+	}
 	jwtSecret := jwtSecret()
 	authSvc := domain.NewAuthService(userRepo, jwtSecret)
 
