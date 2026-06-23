@@ -137,7 +137,7 @@ export function PipelineRunList({ ticketId }: PipelineRunListProps) {
 
           <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
             <span>
-              {run.phases.length} {run.phases.length === 1 ? 'phase' : 'phases'}
+              {run.phases?.length} {run.phases?.length === 1 ? 'phase' : 'phases'}
             </span>
             <span>Started {formatTime(run.started_at)}</span>
           </div>
