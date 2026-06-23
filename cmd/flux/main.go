@@ -163,7 +163,8 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		if o.Type == "soda" {
 			slog.Info("configuring soda orchestrator", "path", o.Path)
 			pipelineSvc = domain.NewPipelineRunService(pipelineRepo,
-				domain.WithOrchestrator(orchestrator.NewSodaAdapter(o.Path)))
+				domain.WithOrchestrator(orchestrator.NewSodaAdapter(o.Path,
+					orchestrator.WithSodaConfig("soda.yaml"))))
 			break
 		}
 	}
