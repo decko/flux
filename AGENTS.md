@@ -175,6 +175,41 @@ The `flux-expert` agent orchestrates development. It delegates to:
 | senior-qe | v4-pro (high) | Adversarial final gate (cross-domain, requirement fit) |
 | go-scout | v4-flash | Codebase exploration |
 
+### Multi-Agent Analysis (for architectural decisions)
+
+When the user presents an open-ended architectural question (not a bug fix or feature implementation), use this pattern instead of answering directly.
+
+**Trigger words:** "what should we do about...", "how should we handle...", "is this a good idea...", "analyze this approach..."
+
+**Pattern:**
+
+1. **Parallel dispatch**: Send the idea to 3 agents simultaneously, each with a distinct lens:
+   - `go-architect` — schema, patterns, risks ("analyze from an architectural perspective")
+   - `go-reviewer` — security, integrity, pitfalls ("analyze from a security perspective")
+   - `general` — implementation effort, tradeoffs, simpler alternatives ("analyze from an implementation perspective")
+
+2. **Give each agent the original idea verbatim**, plus this instruction:
+   ```
+   Be critical and specific. Be opinionated — recommend a concrete approach
+   and explain what you'd avoid.
+   ```
+
+3. **Synthesize**, not summarize. Output this structure:
+   - **Agreements** — what all 3 concur on (strong signal)
+   - **Tensions** — where they disagree (requires judgment call)
+   - **Concrete Recommendation** — phased plan with effort estimates
+   - **What to avoid** — anti-patterns surfaced
+
+4. **Own the final call**: After presenting the synthesis, state which tradeoffs you'd make and why.
+
+**Anti-patterns to avoid:**
+- Don't dispatch for routine tasks — only architectural decisions
+- Don't give agents different versions of the idea
+- Don't present synthesis as consensus — surface tensions honestly
+- Don't skip "what to avoid" — anti-patterns are often more valuable than recommendations
+
+**Cost**: ~3,000 tokens per analysis. Use for schema, security boundaries, or cross-cutting concerns.
+
 ### Review Loop
 
 ```
