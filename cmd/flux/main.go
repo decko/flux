@@ -180,6 +180,9 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		}
 	}
 
+	// Start background sync loop.
+	go syncSvc.Run(ctx)
+
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
 		api.WithJWTSecret(jwtSecret),
