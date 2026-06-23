@@ -23,23 +23,42 @@ var (
 // as a subprocess. All commands use exec.CommandContext for context propagation
 // and timeout support.
 type SodaAdapter struct {
-	path string // path to the soda binary
+	path       string // path to the soda binary
+	configPath string // path to soda config file
+}
+
+// SodaOption configures a SodaAdapter.
+type SodaOption func(*SodaAdapter)
+
+// WithSodaConfig sets the soda config file path (--config flag).
+func WithSodaConfig(configPath string) SodaOption {
+	return func(a *SodaAdapter) { a.configPath = configPath }
 }
 
 // NewSodaAdapter creates a new SodaAdapter that invokes the binary at sodaPath.
-func NewSodaAdapter(sodaPath string) *SodaAdapter {
-	return &SodaAdapter{path: sodaPath}
+func NewSodaAdapter(sodaPath string, opts ...SodaOption) *SodaAdapter {
+	a := &SodaAdapter{path: sodaPath}
+	for _, o := range opts {
+		o(a)
+	}
+	return a
 }
 
 // Name returns the adapter identifier "soda".
-func (a *SodaAdapter) Name() string {
-	return "soda"
+func (a *SodaAdapter) Name() string { return "soda" }
+
+// sodaArgs builds the argument list for a soda command, including the config flag.
+func (a *SodaAdapter) sodaArgs(args ...string) []string {
+	if a.configPath != "" {
+		return append([]string{"--config", a.configPath}, args...)
+	}
+	return args
 }
 
 // Health verifies that the soda binary exists and is executable by running
 // "soda --version".
 func (a *SodaAdapter) Health(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, a.path, "--version")
+	cmd := exec.CommandContext(ctx, a.path, a.sodaArgs("--version")...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -68,7 +87,7 @@ func (a *SodaAdapter) Trigger(ctx context.Context, run model.PipelineRun) error 
 // Status retrieves the current state of a pipeline run. It parses the JSON-RPC
 // response from "soda status --run-id <runID>".
 func (a *SodaAdapter) Status(ctx context.Context, runID string) (*model.PipelineRun, error) {
-	cmd := exec.CommandContext(ctx, a.path, "status", "--run-id", runID)
+	cmd := exec.CommandContext(ctx, a.path, a.sodaArgs("status", "--run-id", runID)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -88,7 +107,7 @@ func (a *SodaAdapter) Status(ctx context.Context, runID string) (*model.Pipeline
 
 // Cancel stops a running pipeline run by executing "soda cancel --run-id <runID>".
 func (a *SodaAdapter) Cancel(ctx context.Context, runID string) error {
-	cmd := exec.CommandContext(ctx, a.path, "cancel", "--run-id", runID)
+	cmd := exec.CommandContext(ctx, a.path, a.sodaArgs("cancel", "--run-id", runID)...)
 	return cmd.Run()
 }
 
@@ -96,7 +115,7 @@ func (a *SodaAdapter) Cancel(ctx context.Context, runID string) error {
 // JSON LogEntry and sends it to the returned channel. The channel is closed
 // when the run completes or the context is canceled.
 func (a *SodaAdapter) Logs(ctx context.Context, runID string) (<-chan LogEntry, error) {
-	cmd := exec.CommandContext(ctx, a.path, "logs", "--run-id", runID)
+	cmd := exec.CommandContext(ctx, a.path, a.sodaArgs("logs", "--run-id", runID)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("soda logs: pipe: %w", err)
