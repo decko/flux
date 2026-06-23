@@ -48,17 +48,17 @@ func (a *SodaAdapter) Health(ctx context.Context) error {
 	return nil
 }
 
-// Trigger starts a pipeline run. The pipeline itself executes asynchronously
-// on the soda side; this method waits for the trigger command to complete.
+// Trigger starts a pipeline run by invoking "soda run <ticket>".
+// soda executes asynchronously; this method waits for the command to complete.
 func (a *SodaAdapter) Trigger(ctx context.Context, run model.PipelineRun) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("soda trigger: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, a.path,
-		"trigger",
-		"--pipeline", run.Pipeline,
-		"--ticket", run.TicketID,
-	)
+	args := []string{"run", run.TicketID}
+	if run.Pipeline != "" {
+		args = append(args, "--pipeline", run.Pipeline)
+	}
+	cmd := exec.CommandContext(ctx, a.path, args...)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("soda trigger: %w", err)
 	}

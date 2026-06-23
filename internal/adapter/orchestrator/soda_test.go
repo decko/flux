@@ -74,6 +74,7 @@ echo '{"jsonrpc":"2.0","id":1,"result":{"status":"accepted"}}'`
 	a := NewSodaAdapter(sodaPath)
 	run := model.PipelineRun{
 		ID:       "run-1",
+		TicketID: "ticket-1",
 		Pipeline: "default",
 	}
 
@@ -87,8 +88,8 @@ echo '{"jsonrpc":"2.0","id":1,"result":{"status":"accepted"}}'`
 		t.Fatalf("read args file: %v", err)
 	}
 	args := string(data)
-	if !strings.Contains(args, "trigger") {
-		t.Errorf("soda args = %q, want to contain 'trigger'", args)
+	if !strings.Contains(args, "run") {
+		t.Errorf("soda args = %q, want to contain 'run'", args)
 	}
 	if !strings.Contains(args, "default") {
 		t.Errorf("soda args = %q, want to contain 'default'", args)
