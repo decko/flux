@@ -113,6 +113,27 @@ func (s *Server) handleCreatePipelineRun(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleTriggerPipelineRun(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
+	// Try using the ticket external ID (soda expects GitHub issue numbers).
+	if s.ticketSvc != nil {
+		if run, err := s.pipelineSvc.Get(r.Context(), id); err == nil {
+			if tkt, tktErr := s.ticketSvc.Get(r.Context(), run.TicketID); tktErr == nil && tkt.ExternalID != "" {
+				err = s.pipelineSvc.TriggerWithTicketID(r.Context(), id, tkt.ExternalID)
+				if err == nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
+					return
+				}
+				code, msg := serviceError(err)
+				if code == http.StatusInternalServerError {
+					slog.Error("trigger pipeline run", "error", err, "request_id", middleware.GetReqID(r.Context()))
+				}
+				writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
+				return
+			}
+		}
+	}
+
 	if err := s.pipelineSvc.Trigger(r.Context(), id); err != nil {
 		code, msg := serviceError(err)
 		if code == http.StatusInternalServerError {

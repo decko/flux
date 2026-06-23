@@ -87,12 +87,22 @@ func (s *PipelineRunService) Update(ctx context.Context, run model.PipelineRun) 
 // Returns ErrNotFound if the pipeline run does not exist.
 // Returns an error if no orchestrator adapter is configured.
 func (s *PipelineRunService) Trigger(ctx context.Context, runID string) error {
+	return s.TriggerWithTicketID(ctx, runID, "")
+}
+
+// TriggerWithTicketID starts execution of a pipeline run, using the given external
+// ticket ID when passing to the orchestrator (soda expects a GitHub issue number).
+func (s *PipelineRunService) TriggerWithTicketID(ctx context.Context, runID, externalTicketID string) error {
 	if s.orchestrator == nil {
 		return fmt.Errorf("orchestrator not configured")
 	}
 	run, err := s.repo.Get(ctx, runID)
 	if err != nil {
 		return fmt.Errorf("trigger pipeline run: %w", err)
+	}
+	// Use the external ticket ID if provided (soda expects GitHub issue numbers).
+	if externalTicketID != "" {
+		run.TicketID = externalTicketID
 	}
 	if err := (*s.orchestrator).Trigger(ctx, run); err != nil {
 		return fmt.Errorf("trigger pipeline run: %w", err)
