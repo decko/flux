@@ -104,7 +104,7 @@ export function PipelineRunList({ ticketId }: PipelineRunListProps) {
     );
   }
 
-  const runs = query.data;
+  const runs = query.data?.items ?? [];
 
   // --- Empty state ---
   if (runs.length === 0) {
