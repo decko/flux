@@ -44,7 +44,7 @@ function getToken(): string | null {
  * Fetches pipeline runs, optionally filtered by ticket_id.
  * GET /api/v1/pipeline-runs[?ticket_id={ticketId}] → PipelineRun[]
  */
-async function fetchPipelineRuns(ticketId?: string): Promise<PipelineRun[]> {
+async function fetchPipelineRuns(ticketId?: string): Promise<{ items: PipelineRun[] }> {
   const token = getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -61,7 +61,7 @@ async function fetchPipelineRuns(ticketId?: string): Promise<PipelineRun[]> {
     throw new Error((body as Record<string, unknown>).error as string || res.statusText);
   }
 
-  return res.json() as Promise<PipelineRun[]>;
+  return res.json() as Promise<{ items: PipelineRun[] }>;
 }
 
 /**
@@ -69,7 +69,7 @@ async function fetchPipelineRuns(ticketId?: string): Promise<PipelineRun[]> {
  * Supports loading (skeleton), empty, error, and success states.
  */
 export function PipelineRunList({ ticketId }: PipelineRunListProps) {
-  const query = useQuery<PipelineRun[]>({
+  const query = useQuery<{ items: PipelineRun[] }>({
     queryKey: ticketId ? ['pipeline-runs', ticketId] : ['pipeline-runs'],
     queryFn: () => fetchPipelineRuns(ticketId),
   });
