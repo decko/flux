@@ -494,6 +494,113 @@ func TestDeleteProject(t *testing.T) {
 	})
 }
 
+// ─── Installation ID ───────────────────────────────────────────────────────
+
+func TestHandleCreateProject_WithInstallationID(t *testing.T) {
+	srv := setupProjectServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"name":"install-test","repo_url":"https://github.com/example/install","installation_id":42}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/projects: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("got status %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+
+	var created model.Project
+	mustDecode(t, resp, &created)
+
+	if created.InstallationID != 42 {
+		t.Errorf("got installation_id %d, want %d", created.InstallationID, 42)
+	}
+}
+
+func TestHandleGetProject_WithInstallationID(t *testing.T) {
+	srv := setupProjectServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Create a project with installation_id first.
+	createBody := `{"name":"get-install","repo_url":"https://github.com/example/get-install","installation_id":99}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(createBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	var created model.Project
+	mustDecode(t, resp, &created)
+	_ = resp.Body.Close()
+
+	// GET the project and verify installation_id.
+	u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, created.ID)
+	req = authedRequest(http.MethodGet, u, nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/projects/%s: %v", created.ID, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var got model.Project
+	mustDecode(t, resp, &got)
+
+	if got.InstallationID != 99 {
+		t.Errorf("got installation_id %d, want %d", got.InstallationID, 99)
+	}
+}
+
+func TestHandleUpdateProject_WithInstallationID(t *testing.T) {
+	srv := setupProjectServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Create a project first.
+	createBody := `{"name":"update-install","repo_url":"https://github.com/example/update-install","installation_id":10}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(createBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	var created model.Project
+	mustDecode(t, resp, &created)
+	_ = resp.Body.Close()
+
+	// Update the installation_id.
+	updateBody := fmt.Sprintf(`{"id":%q,"name":"update-install","repo_url":"https://github.com/example/update-install","installation_id":200}`, created.ID)
+	u := fmt.Sprintf("%s/api/v1/projects/%s", ts.URL, created.ID)
+	req = authedRequest(http.MethodPut, u, strings.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/v1/projects/%s: %v", created.ID, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var updated model.Project
+	mustDecode(t, resp, &updated)
+
+	if updated.InstallationID != 200 {
+		t.Errorf("got installation_id %d, want %d", updated.InstallationID, 200)
+	}
+}
+
 // ─── Method Not Allowed ────────────────────────────────────────────────────
 
 func TestProjectMethodNotAllowed(t *testing.T) {

@@ -785,6 +785,24 @@ func TestConfig_AuditCustomRetention(t *testing.T) {
 	}
 }
 
+// ─── Installation ID Tests ──────────────────────────────────────────────────
+
+func TestConfig_AdapterWithInstallationID(t *testing.T) {
+	t.Parallel()
+
+	yamlData := []byte("adapters:\n  - type: github\n    owner: decko\n    repo: flux\n    installation_id: 42\n")
+	var cfg Config
+	if err := yaml.Unmarshal(yamlData, &cfg); err != nil {
+		t.Fatalf("yaml.Unmarshal error = %v", err)
+	}
+	if len(cfg.Adapters) != 1 {
+		t.Fatalf("len(Adapters) = %d, want 1", len(cfg.Adapters))
+	}
+	if cfg.Adapters[0].InstallationID != 42 {
+		t.Errorf("Adapters[0].InstallationID = %d, want %d", cfg.Adapters[0].InstallationID, 42)
+	}
+}
+
 // checkNoTokenField verifies that a struct type has no field whose name
 // or yaml tag contains "token".
 func checkNoTokenField(t *testing.T, v any) {
