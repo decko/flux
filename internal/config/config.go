@@ -36,9 +36,10 @@ type LoggingConfig struct {
 // here; they are sourced from environment variables at adapter
 // construction time.
 type AdapterEntry struct {
-	Type  string `yaml:"type"`  // "github"
-	Owner string `yaml:"owner"` // repository owner
-	Repo  string `yaml:"repo"`  // repository name
+	Type           string `yaml:"type"`            // "github"
+	Owner          string `yaml:"owner"`           // repository owner
+	Repo           string `yaml:"repo"`            // repository name
+	InstallationID int    `yaml:"installation_id"` // GitHub App installation ID (0 = unset)
 }
 
 // AuditConfig holds retention policy settings for audit log cleanup.

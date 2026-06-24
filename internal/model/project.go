@@ -6,14 +6,15 @@ import "time"
 // It includes the project definition, adapter configurations, and pipeline
 // configurations that drive the agentic SDLC workflow.
 type Project struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	RepoURL    string            `json:"repo_url"`
-	Definition ProjectDefinition `json:"definition"`
-	Adapters   []AdapterConfig   `json:"adapters"`
-	Pipelines  []PipelineConfig  `json:"pipelines"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	RepoURL        string            `json:"repo_url"`
+	InstallationID int               `json:"installation_id"`
+	Definition     ProjectDefinition `json:"definition"`
+	Adapters       []AdapterConfig   `json:"adapters"`
+	Pipelines      []PipelineConfig  `json:"pipelines"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
 // ProjectDefinition describes the technical profile of a project,

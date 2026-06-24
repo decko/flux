@@ -75,8 +75,8 @@ func isValidRunStatus(s RunStatus) bool {
 	}
 }
 
-// Validate checks that the project has all required fields populated.
-// Returns all validation errors joined together.
+// Validate checks that the project has all required fields populated
+// and valid values. Returns all validation errors joined together.
 func (p Project) Validate() error {
 	var errs []error
 	if p.Name == "" {
@@ -84,6 +84,9 @@ func (p Project) Validate() error {
 	}
 	if p.RepoURL == "" {
 		errs = append(errs, fmt.Errorf("project repo url is required"))
+	}
+	if p.InstallationID < 0 {
+		errs = append(errs, fmt.Errorf("project installation_id must be non-negative"))
 	}
 	return errors.Join(errs...)
 }
