@@ -17,6 +17,7 @@ import (
 	"github.com/decko/flux/internal/adapter/scm"
 	"github.com/decko/flux/internal/adapter/ticket"
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/repository"
 )
 
@@ -230,14 +231,11 @@ func TestM2FullPipeline_EndToEndSync(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer func() { _ = db.Close() }()
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
 	ticketRepo := repository.NewSQLiteTicketRepository(db)
 	prRepo := repository.NewSQLitePullRequestRepository(db)
-	if err := ticketRepo.Migrate(t.Context()); err != nil {
-		t.Fatalf("ticket migrate: %v", err)
-	}
-	if err := prRepo.Migrate(t.Context()); err != nil {
-		t.Fatalf("pr migrate: %v", err)
-	}
 
 	// 3. Create real GitHub adapters pointed at the mock server.
 	ticketAdapter := ticket.NewGitHubAdapter("test", "flux", "test-github-token", nil,

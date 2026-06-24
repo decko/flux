@@ -38,30 +38,6 @@ func NewSQLiteTicketRepository(db *sql.DB) *SQLiteTicketRepository {
 	return &SQLiteTicketRepository{db: db}
 }
 
-// Migrate creates the tickets table if it does not already exist.
-// SQLite journal mode and connection pool settings are managed by
-// ConfigureSQLiteDB (called once at application startup), not here.
-func (r *SQLiteTicketRepository) Migrate(ctx context.Context) error {
-	query := `CREATE TABLE IF NOT EXISTS tickets (
-		id TEXT PRIMARY KEY,
-		project_id TEXT NOT NULL,
-		external_id TEXT NOT NULL,
-		source TEXT NOT NULL,
-		title TEXT NOT NULL,
-		description TEXT NOT NULL DEFAULT '',
-		status TEXT NOT NULL,
-		labels TEXT NOT NULL DEFAULT '[]',
-		relationships TEXT NOT NULL DEFAULT '[]',
-		prs TEXT NOT NULL DEFAULT '[]',
-		created_at DATETIME NOT NULL,
-		updated_at DATETIME NOT NULL
-	)`
-	if _, err := r.db.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("creating tickets table: %w", err)
-	}
-	return nil
-}
-
 // Create persists a new ticket. All time.Time values are normalized to UTC
 // before storage. Returns an error if a ticket with the same ID already
 // exists (SQLite UNIQUE constraint violation).

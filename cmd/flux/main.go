@@ -20,6 +20,7 @@ import (
 	"github.com/decko/flux/internal/api"
 	"github.com/decko/flux/internal/config"
 	"github.com/decko/flux/internal/domain"
+	dbMigration "github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/repository"
 )
 
@@ -126,38 +127,18 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		return nil, nil, fmt.Errorf("configure database: %w", err)
 	}
 
+	// Run database migrations.
+	if err := dbMigration.Up(db); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("run migrations: %w", err)
+	}
+
 	projectRepo := repository.NewSQLiteProjectRepository(db)
 	ticketRepo := repository.NewSQLiteTicketRepository(db)
 	prRepo := repository.NewSQLitePullRequestRepository(db)
 	pipelineRepo := repository.NewSQLitePipelineRunRepository(db)
 	userRepo := repository.NewSQLiteUserRepository(db)
-
-	if err := projectRepo.Migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, nil, fmt.Errorf("migrate projects: %w", err)
-	}
-	if err := ticketRepo.Migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, nil, fmt.Errorf("migrate tickets: %w", err)
-	}
-	if err := prRepo.Migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, nil, fmt.Errorf("migrate pull requests: %w", err)
-	}
-	if err := pipelineRepo.Migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, nil, fmt.Errorf("migrate pipeline runs: %w", err)
-	}
-	if err := userRepo.Migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, nil, fmt.Errorf("migrate users: %w", err)
-	}
-
 	auditRepo := repository.NewSQLiteAuditRepository(db)
-	if err := auditRepo.Migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, nil, fmt.Errorf("migrate audit events: %w", err)
-	}
 	auditSvc := domain.NewAuditService(auditRepo)
 
 	projectSvc := domain.NewProjectService(projectRepo)

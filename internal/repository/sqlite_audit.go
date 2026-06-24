@@ -36,29 +36,6 @@ func NewSQLiteAuditRepository(db *sql.DB) *SQLiteAuditRepository {
 	return &SQLiteAuditRepository{db: db}
 }
 
-// Migrate creates the audit_events table and associated indexes if they do not
-// already exist. Safe to call multiple times.
-func (r *SQLiteAuditRepository) Migrate(ctx context.Context) error {
-	query := `CREATE TABLE IF NOT EXISTS audit_events (
-		id TEXT PRIMARY KEY,
-		actor_id TEXT NOT NULL,
-		action TEXT NOT NULL,
-		resource_type TEXT NOT NULL,
-		resource_id TEXT NOT NULL,
-		metadata TEXT NOT NULL DEFAULT '{}',
-		previous_hash TEXT NOT NULL DEFAULT '',
-		hash TEXT NOT NULL DEFAULT '',
-		created_at DATETIME NOT NULL DEFAULT (datetime('now'))
-	);
-	CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_events(actor_id);
-	CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_events(resource_type, resource_id);
-	CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at);`
-	if _, err := r.db.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("creating audit_events table: %w", err)
-	}
-	return nil
-}
-
 // Insert persists a new audit event. If the event's ID is empty, a UUID is
 // generated automatically. If CreatedAt is zero, the current UTC time is used.
 func (r *SQLiteAuditRepository) Insert(ctx context.Context, event model.AuditEvent) error {

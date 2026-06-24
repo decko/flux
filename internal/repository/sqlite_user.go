@@ -30,22 +30,6 @@ func NewSQLiteUserRepository(db *sql.DB) *SQLiteUserRepository {
 	return &SQLiteUserRepository{db: db}
 }
 
-// Migrate creates the users table if it does not already exist.
-// The email column has a UNIQUE constraint to enforce uniqueness.
-func (r *SQLiteUserRepository) Migrate(ctx context.Context) error {
-	query := `CREATE TABLE IF NOT EXISTS users (
-		id TEXT PRIMARY KEY,
-		email TEXT NOT NULL UNIQUE,
-		password_hash TEXT NOT NULL,
-		role TEXT NOT NULL,
-		created_at DATETIME NOT NULL
-	)`
-	if _, err := r.db.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("creating users table: %w", err)
-	}
-	return nil
-}
-
 // Create persists a new user. Returns ErrDuplicateEmail if a user with the
 // same email already exists.
 func (r *SQLiteUserRepository) Create(ctx context.Context, user model.User) error {

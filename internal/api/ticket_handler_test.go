@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
@@ -34,10 +35,10 @@ func setupTicketServer(t *testing.T) (*Server, func(t *testing.T, tkt model.Tick
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLiteTicketRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
+	repo := repository.NewSQLiteTicketRepository(db)
 
 	svc := domain.NewTicketService(repo)
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithTicketService(svc))

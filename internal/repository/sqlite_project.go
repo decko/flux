@@ -37,26 +37,6 @@ func NewSQLiteProjectRepository(db *sql.DB) *SQLiteProjectRepository {
 	return &SQLiteProjectRepository{db: db}
 }
 
-// Migrate creates the projects table if it does not already exist.
-// SQLite journal mode and connection pool settings are managed by
-// ConfigureSQLiteDB (called once at application startup), not here.
-func (r *SQLiteProjectRepository) Migrate(ctx context.Context) error {
-	query := `CREATE TABLE IF NOT EXISTS projects (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL,
-		repo_url TEXT NOT NULL,
-		definition TEXT NOT NULL DEFAULT '{}',
-		adapters TEXT NOT NULL DEFAULT '[]',
-		pipelines TEXT NOT NULL DEFAULT '[]',
-		created_at DATETIME NOT NULL,
-		updated_at DATETIME NOT NULL
-	)`
-	if _, err := r.db.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("creating projects table: %w", err)
-	}
-	return nil
-}
-
 // Create persists a new project. All time.Time values are normalized to UTC
 // before storage. Returns an error if a project with the same ID already
 // exists (SQLite UNIQUE constraint violation).

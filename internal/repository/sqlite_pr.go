@@ -38,29 +38,6 @@ func NewSQLitePullRequestRepository(db *sql.DB) *SQLitePullRequestRepository {
 	return &SQLitePullRequestRepository{db: db}
 }
 
-// Migrate creates the pull_requests table if it does not already exist.
-// SQLite journal mode and connection pool settings are managed by
-// ConfigureSQLiteDB (called once at application startup), not here.
-func (r *SQLitePullRequestRepository) Migrate(ctx context.Context) error {
-	query := `CREATE TABLE IF NOT EXISTS pull_requests (
-		id TEXT PRIMARY KEY,
-		project_id TEXT NOT NULL,
-		external_id TEXT NOT NULL,
-		source TEXT NOT NULL,
-		title TEXT NOT NULL,
-		url TEXT NOT NULL,
-		status TEXT NOT NULL,
-		ticket_ids TEXT NOT NULL DEFAULT '[]',
-		reviews TEXT NOT NULL DEFAULT '[]',
-		created_at DATETIME NOT NULL,
-		updated_at DATETIME NOT NULL
-	)`
-	if _, err := r.db.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("creating pull_requests table: %w", err)
-	}
-	return nil
-}
-
 // Create persists a new pull request. All time.Time values are normalized to
 // UTC before storage. Returns an error if a pull request with the same ID
 // already exists (SQLite UNIQUE constraint violation).

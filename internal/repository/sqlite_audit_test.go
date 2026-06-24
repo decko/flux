@@ -8,6 +8,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/repository"
 )
 
@@ -27,10 +28,10 @@ func setupAuditTestDB(t *testing.T) (*repository.SQLiteAuditRepository, *sql.DB)
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLiteAuditRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
+	repo := repository.NewSQLiteAuditRepository(db)
 	return repo, db
 }
 

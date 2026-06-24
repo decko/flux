@@ -15,6 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/repository"
 )
 
@@ -73,11 +74,10 @@ func TestAPIV1RoutesExist(t *testing.T) {
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLiteProjectRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
-
+	repo := repository.NewSQLiteProjectRepository(db)
 	svc := domain.NewProjectService(repo)
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithProjectService(svc))
 	ts := httptest.NewServer(srv)

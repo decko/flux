@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
@@ -34,10 +35,10 @@ func setupPRServer(t *testing.T) (*Server, func(t *testing.T, pr model.PullReque
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLitePullRequestRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
+	repo := repository.NewSQLitePullRequestRepository(db)
 
 	svc := domain.NewPullRequestService(repo)
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPRService(svc))
