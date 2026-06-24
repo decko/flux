@@ -5,15 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/decko/flux/pkg/authctx"
 	"github.com/decko/flux/pkg/jwtutil"
-)
-
-// contextKey is a private type for context keys to avoid collisions.
-type contextKey string
-
-const (
-	contextKeyUserID contextKey = "user_id"
-	contextKeyRole   contextKey = "role"
 )
 
 // AuthMiddleware returns middleware that validates JWT Bearer tokens from
@@ -45,8 +38,8 @@ func AuthMiddleware(jwtSecret []byte) func(http.Handler) http.Handler {
 			userID, _ := claims.GetSubject()
 			role, _ := claims["role"].(string)
 
-			ctx := context.WithValue(r.Context(), contextKeyUserID, userID)
-			ctx = context.WithValue(ctx, contextKeyRole, role)
+			ctx := authctx.WithUserID(r.Context(), userID)
+			ctx = authctx.WithRole(ctx, role)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -55,13 +48,11 @@ func AuthMiddleware(jwtSecret []byte) func(http.Handler) http.Handler {
 // UserIDFromContext extracts the user ID from the request context.
 // Returns an empty string if the context does not contain user ID data.
 func UserIDFromContext(ctx context.Context) string {
-	id, _ := ctx.Value(contextKeyUserID).(string)
-	return id
+	return authctx.UserID(ctx)
 }
 
 // UserRoleFromContext extracts the user role from the request context.
 // Returns an empty string if the context does not contain role data.
 func UserRoleFromContext(ctx context.Context) string {
-	role, _ := ctx.Value(contextKeyRole).(string)
-	return role
+	return authctx.Role(ctx)
 }
