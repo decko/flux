@@ -64,6 +64,46 @@ func TestUp_CreatesAllTables(t *testing.T) {
 }
 
 // TestUp_Idempotent verifies that running Up() twice does not fail.
+// TestUp_ProjectsTableInstallationIDColumn verifies that the projects table
+// has the github_installation_id column after migration 007 is applied.
+func TestUp_ProjectsTableInstallationIDColumn(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if err := Up(db); err != nil {
+		t.Fatalf("Up failed: %v", err)
+	}
+
+	// Verify the column exists (added by migration 007).
+	var count int
+	err = db.QueryRow(
+		"SELECT count(*) FROM pragma_table_info('projects') WHERE name='github_installation_id'",
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("checking column: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("github_installation_id column should exist after migration 007, got count=%d", count)
+	}
+
+	// Verify the current migration version is at least 7.
+	var version int
+	err = db.QueryRow("SELECT max(version) FROM schema_migrations").Scan(&version)
+	if err != nil {
+		t.Fatalf("checking schema version: %v", err)
+	}
+	if version < 7 {
+		t.Errorf("expected at least migration version 7, got %d", version)
+	}
+
+	t.Log("projects table has github_installation_id column (migration 007 applied)")
+}
+
 func TestUp_Idempotent(t *testing.T) {
 	t.Parallel()
 
