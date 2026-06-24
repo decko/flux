@@ -156,7 +156,8 @@ type AuditFilter struct {
 }
 
 // AuditRepository defines the contract for audit event persistence.
-// Audit records are append-only — there are no Update or Delete operations.
+// Audit records are append-only — there are no Update or Delete operations
+// outside of the PurgeOlderThan cleanup method.
 type AuditRepository interface {
 	// Insert persists a new audit event. If the event's ID is empty, a UUID
 	// is generated automatically.
@@ -167,9 +168,9 @@ type AuditRepository interface {
 	// Zero values in the filter are ignored.
 	List(ctx context.Context, filter AuditFilter) ([]model.AuditEvent, error)
 
-	// Latest returns the most recent audit event (by created_at), or nil if
-	// no events exist. Used by the hash chain to link consecutive events.
-	Latest(ctx context.Context) (*model.AuditEvent, error)
+	// PurgeOlderThan deletes audit events older than the given time.
+	// Returns the count of deleted rows.
+	PurgeOlderThan(ctx context.Context, before time.Time) (int64, error)
 }
 
 // UserRepository defines the contract for user persistence.
