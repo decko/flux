@@ -276,7 +276,7 @@ func TestGenerateJWT(t *testing.T) {
 	if claims.ExpiresAt == nil {
 		t.Fatal("exp claim is missing")
 	}
-	expiry := claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time)
+	expiry := claims.ExpiresAt.Sub(claims.IssuedAt.Time)
 	if expiry < 9*time.Minute || expiry > 11*time.Minute {
 		t.Errorf("JWT validity = %v, want ~10 minutes", expiry)
 	}
