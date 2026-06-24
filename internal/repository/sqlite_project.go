@@ -32,7 +32,7 @@ type SQLiteProjectRepository struct {
 //
 // The caller must also ensure the "sqlite3" driver is imported:
 //
-//	import _ "github.com/mattn/go-sqlite3"
+//	import _ "modernc.org/sqlite"
 func NewSQLiteProjectRepository(db *sql.DB) *SQLiteProjectRepository {
 	return &SQLiteProjectRepository{db: db}
 }

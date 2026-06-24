@@ -33,7 +33,7 @@ type SQLitePullRequestRepository struct {
 //
 // The caller must also ensure the "sqlite3" driver is imported:
 //
-//	import _ "github.com/mattn/go-sqlite3"
+//	import _ "modernc.org/sqlite"
 func NewSQLitePullRequestRepository(db *sql.DB) *SQLitePullRequestRepository {
 	return &SQLitePullRequestRepository{db: db}
 }

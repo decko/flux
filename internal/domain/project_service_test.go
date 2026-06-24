@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/model"
@@ -300,7 +300,7 @@ func TestProjectService_Delete_NotFound(t *testing.T) {
 // setupAuditDB creates an in-memory SQLite audit repository for testing.
 func setupAuditDB(t *testing.T) *repository.SQLiteAuditRepository {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("failed to open in-memory SQLite: %v", err)
 	}

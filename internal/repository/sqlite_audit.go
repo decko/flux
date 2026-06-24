@@ -31,7 +31,7 @@ type SQLiteAuditRepository struct {
 //
 // The caller must also ensure the "sqlite3" driver is imported:
 //
-//	import _ "github.com/mattn/go-sqlite3"
+//	import _ "modernc.org/sqlite"
 func NewSQLiteAuditRepository(db *sql.DB) *SQLiteAuditRepository {
 	return &SQLiteAuditRepository{db: db}
 }

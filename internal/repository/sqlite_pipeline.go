@@ -30,7 +30,7 @@ type SQLitePipelineRunRepository struct {
 //
 // The caller must also ensure the "sqlite3" driver is imported:
 //
-//	import _ "github.com/mattn/go-sqlite3"
+//	import _ "modernc.org/sqlite"
 func NewSQLitePipelineRunRepository(db *sql.DB) *SQLitePipelineRunRepository {
 	return &SQLitePipelineRunRepository{db: db}
 }

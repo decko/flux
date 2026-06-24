@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/adapter/scm"
 	"github.com/decko/flux/internal/adapter/ticket"
@@ -225,7 +225,7 @@ func TestM2FullPipeline_EndToEndSync(t *testing.T) {
 	gh.addReview(10, "reviewer2", "CHANGES_REQUESTED", "needs tests")
 
 	// 2. Create in-memory repositories.
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/adapter/scm"
@@ -116,7 +116,7 @@ func setupLogging(level string) {
 // services, and the API server — returning the server, a cleanup function
 // that closes the database, and any error encountered during setup.
 func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), error) {
-	db, err := sql.Open("sqlite3", cfg.Database.Path)
+	db, err := sql.Open("sqlite", cfg.Database.Path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open database: %w", err)
 	}
