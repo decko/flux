@@ -65,3 +65,19 @@ func (s *Server) handleAuditEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(events)
 }
+
+// handleAuditIntegrity handles GET /api/v1/audit/integrity.
+// Admin-only. Verifies the hash chain of all audit events and returns
+// { "valid": bool, "first_broken_at": string | null }.
+func (s *Server) handleAuditIntegrity(w http.ResponseWriter, r *http.Request) {
+	result, err := s.auditSvc.VerifyIntegrity(r.Context())
+	if err != nil {
+		slog.Error("audit integrity check", "error", err, "request_id", middleware.GetReqID(r.Context()))
+		writeJSONError(w, http.StatusInternalServerError, "Internal Server Error", middleware.GetReqID(r.Context()))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
+}

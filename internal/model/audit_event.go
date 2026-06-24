@@ -22,6 +22,8 @@ type AuditEvent struct {
 	ResourceType string      `json:"resource_type"`
 	ResourceID   string      `json:"resource_id"`
 	Metadata     string      `json:"metadata"`
+	PreviousHash string      `json:"previous_hash"`
+	Hash         string      `json:"hash"`
 	CreatedAt    time.Time   `json:"created_at"`
 }
 

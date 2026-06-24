@@ -68,6 +68,21 @@ func (r *mockAuditRepo) List(_ context.Context, filter repository.AuditFilter) (
 	return result, nil
 }
 
+func (r *mockAuditRepo) Latest(_ context.Context) (*model.AuditEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.store) == 0 {
+		return nil, nil
+	}
+	latest := r.store[0]
+	for _, e := range r.store[1:] {
+		if e.CreatedAt.After(latest.CreatedAt) {
+			latest = e
+		}
+	}
+	return &latest, nil
+}
+
 // ─── Test Helpers ───────────────────────────────────────────────────────────
 
 func testAuditEvent(id, actorID string, action model.AuditAction, resourceType, resourceID string, createdAt time.Time) model.AuditEvent {

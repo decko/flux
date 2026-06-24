@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -45,6 +46,8 @@ func (r *SQLiteAuditRepository) Migrate(ctx context.Context) error {
 		resource_type TEXT NOT NULL,
 		resource_id TEXT NOT NULL,
 		metadata TEXT NOT NULL DEFAULT '{}',
+		previous_hash TEXT NOT NULL DEFAULT '',
+		hash TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 	);
 	CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_events(actor_id);
@@ -65,7 +68,7 @@ func (r *SQLiteAuditRepository) Insert(ctx context.Context, event model.AuditEve
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = time.Now().UTC()
 	}
-	query := `INSERT INTO audit_events (id, actor_id, action, resource_type, resource_id, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO audit_events (id, actor_id, action, resource_type, resource_id, metadata, previous_hash, hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := r.db.ExecContext(ctx, query,
 		event.ID,
 		event.ActorID,
@@ -73,6 +76,8 @@ func (r *SQLiteAuditRepository) Insert(ctx context.Context, event model.AuditEve
 		event.ResourceType,
 		event.ResourceID,
 		event.Metadata,
+		event.PreviousHash,
+		event.Hash,
 		event.CreatedAt.UTC(),
 	)
 	if err != nil {
@@ -113,7 +118,7 @@ func (r *SQLiteAuditRepository) List(ctx context.Context, filter AuditFilter) ([
 		args = append(args, filter.Until.UTC())
 	}
 
-	query := "SELECT id, actor_id, action, resource_type, resource_id, metadata, created_at FROM audit_events"
+	query := "SELECT id, actor_id, action, resource_type, resource_id, metadata, previous_hash, hash, created_at FROM audit_events"
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -144,6 +149,8 @@ func (r *SQLiteAuditRepository) List(ctx context.Context, filter AuditFilter) ([
 			&event.ResourceType,
 			&event.ResourceID,
 			&event.Metadata,
+			&event.PreviousHash,
+			&event.Hash,
 			&event.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning audit event row: %w", err)
@@ -155,4 +162,29 @@ func (r *SQLiteAuditRepository) List(ctx context.Context, filter AuditFilter) ([
 	}
 
 	return events, nil
+}
+
+// Latest returns the most recent audit event by created_at, or nil if no
+// events exist. Used by the hash chain to link consecutive events.
+func (r *SQLiteAuditRepository) Latest(ctx context.Context) (*model.AuditEvent, error) {
+	query := "SELECT id, actor_id, action, resource_type, resource_id, metadata, previous_hash, hash, created_at FROM audit_events ORDER BY created_at DESC LIMIT 1"
+	row := r.db.QueryRowContext(ctx, query)
+	var event model.AuditEvent
+	if err := row.Scan(
+		&event.ID,
+		&event.ActorID,
+		&event.Action,
+		&event.ResourceType,
+		&event.ResourceID,
+		&event.Metadata,
+		&event.PreviousHash,
+		&event.Hash,
+		&event.CreatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("latest audit event: %w", err)
+	}
+	return &event, nil
 }

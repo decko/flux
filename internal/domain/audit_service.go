@@ -2,6 +2,8 @@ package domain
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -55,9 +57,65 @@ func (s *AuditService) Record(ctx context.Context, action model.AuditAction, res
 		return fmt.Errorf("audit record: %w", err)
 	}
 
+	// Build hash chain: link this event to the previous event's hash.
+	latest, err := s.repo.Latest(ctx)
+	if err != nil {
+		return fmt.Errorf("audit record: %w", err)
+	}
+	if latest != nil {
+		event.PreviousHash = latest.Hash
+	}
+	event.Hash = hashEvent(event)
+
 	if err := s.repo.Insert(ctx, event); err != nil {
 		return fmt.Errorf("audit record: %w", err)
 	}
 
 	return nil
+}
+
+// AuditIntegrityResult describes the outcome of a hash chain integrity check.
+type AuditIntegrityResult struct {
+	Valid         bool    `json:"valid"`
+	FirstBrokenAt *string `json:"first_broken_at,omitempty"`
+}
+
+// VerifyIntegrity walks all audit events in chronological order and verifies
+// that each event's hash matches a recomputation of its fields linked to the
+// previous event's hash. Returns the first broken event ID, or nil if the
+// chain is intact.
+func (s *AuditService) VerifyIntegrity(ctx context.Context) (*AuditIntegrityResult, error) {
+	events, err := s.repo.List(ctx, repository.AuditFilter{})
+	if err != nil {
+		return nil, fmt.Errorf("verify integrity: %w", err)
+	}
+
+	// List returns DESC order; iterate backwards for ASC.
+	var previousHash string
+	for i := len(events) - 1; i >= 0; i-- {
+		e := events[i]
+		expected := hashEvent(model.AuditEvent{
+			PreviousHash: previousHash,
+			ActorID:      e.ActorID,
+			Action:       e.Action,
+			ResourceType: e.ResourceType,
+			ResourceID:   e.ResourceID,
+			CreatedAt:    e.CreatedAt,
+		})
+		if expected != e.Hash {
+			id := e.ID
+			return &AuditIntegrityResult{Valid: false, FirstBrokenAt: &id}, nil
+		}
+		previousHash = e.Hash
+	}
+
+	return &AuditIntegrityResult{Valid: true}, nil
+}
+
+// hashEvent computes the SHA-256 hash of an audit event using its PreviousHash,
+// ActorID, Action, ResourceType, ResourceID, and CreatedAt fields.
+func hashEvent(e model.AuditEvent) string {
+	input := e.PreviousHash + e.ActorID + string(e.Action) + e.ResourceType + e.ResourceID + e.CreatedAt.String()
+	h := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(h[:])
 }
