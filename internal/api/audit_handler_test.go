@@ -13,6 +13,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
@@ -32,11 +33,10 @@ func setupAuditServer(t *testing.T) *Server {
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLiteAuditRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
-
+	repo := repository.NewSQLiteAuditRepository(db)
 	svc := domain.NewAuditService(repo)
 	return NewServer(WithJWTSecret(testJWTSecretBytes), WithAuditService(svc))
 }
@@ -110,9 +110,8 @@ func TestHandleAuditEvents(t *testing.T) {
 	if err := repository.ConfigureSQLiteDB(db); err != nil {
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
-	repo := repository.NewSQLiteAuditRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 	// Need to seed into the same DB that the server uses.
 	// Instead, let's use a different approach — build the server with seeded data.
@@ -128,11 +127,10 @@ func TestHandleAuditEvents(t *testing.T) {
 			t.Fatalf("failed to configure SQLite: %v", err)
 		}
 
-		repo := repository.NewSQLiteAuditRepository(db)
-		if err := repo.Migrate(context.Background()); err != nil {
-			t.Fatalf("failed to run migration: %v", err)
+		if err := migration.Up(db); err != nil {
+			t.Fatalf("migrate: %v", err)
 		}
-
+		repo := repository.NewSQLiteAuditRepository(db)
 		seedAuditEvents(t, repo)
 
 		svc := domain.NewAuditService(repo)
@@ -181,11 +179,10 @@ func TestHandleAuditEvents_FilterByResource(t *testing.T) {
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLiteAuditRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
-
+	repo := repository.NewSQLiteAuditRepository(db)
 	seedAuditEvents(t, repo)
 
 	svc := domain.NewAuditService(repo)

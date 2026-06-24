@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
@@ -33,10 +33,10 @@ func setupProjectServer(t *testing.T) *Server {
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLiteProjectRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
+	repo := repository.NewSQLiteProjectRepository(db)
 
 	svc := domain.NewProjectService(repo)
 	return NewServer(WithJWTSecret(testJWTSecretBytes), WithProjectService(svc))

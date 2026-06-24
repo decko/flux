@@ -35,28 +35,6 @@ func NewSQLitePipelineRunRepository(db *sql.DB) *SQLitePipelineRunRepository {
 	return &SQLitePipelineRunRepository{db: db}
 }
 
-// Migrate creates the pipeline_runs table if it does not already exist.
-// SQLite journal mode and connection pool settings are managed by
-// ConfigureSQLiteDB (called once at application startup), not here.
-func (r *SQLitePipelineRunRepository) Migrate(ctx context.Context) error {
-	query := `CREATE TABLE IF NOT EXISTS pipeline_runs (
-		id TEXT PRIMARY KEY,
-		project_id TEXT NOT NULL,
-		ticket_id TEXT NOT NULL,
-		orchestrator TEXT NOT NULL,
-		pipeline TEXT NOT NULL,
-		status TEXT NOT NULL,
-		phases TEXT NOT NULL DEFAULT '[]',
-		started_at DATETIME NOT NULL,
-		completed_at DATETIME,
-		cost TEXT
-	)`
-	if _, err := r.db.ExecContext(ctx, query); err != nil {
-		return fmt.Errorf("creating pipeline_runs table: %w", err)
-	}
-	return nil
-}
-
 // Create persists a new pipeline run. time.Time values are normalized to UTC
 // before storage. The Phases field is JSON-marshaled; Cost is marshaled when
 // non-nil and stored as SQL NULL when nil. Returns an error if a run with the

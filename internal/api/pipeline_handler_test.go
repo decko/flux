@@ -16,6 +16,7 @@ import (
 
 	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
@@ -36,11 +37,10 @@ func setupPipelineServer(t *testing.T) (*Server, func(t *testing.T, run model.Pi
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLitePipelineRunRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
-
+	repo := repository.NewSQLitePipelineRunRepository(db)
 	svc := domain.NewPipelineRunService(repo)
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPipelineService(svc))
 
@@ -116,11 +116,10 @@ func setupPipelineServerWithOrch(t *testing.T, orch orchestrator.OrchestratorAda
 		t.Fatalf("failed to configure SQLite: %v", err)
 	}
 
-	repo := repository.NewSQLitePipelineRunRepository(db)
-	if err := repo.Migrate(context.Background()); err != nil {
-		t.Fatalf("failed to run migration: %v", err)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
-
+	repo := repository.NewSQLitePipelineRunRepository(db)
 	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPipelineService(svc))
 
