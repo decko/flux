@@ -28,6 +28,22 @@ func (r *mockAuditRepo) Insert(_ context.Context, event model.AuditEvent) error 
 	return nil
 }
 
+func (r *mockAuditRepo) PurgeOlderThan(_ context.Context, before time.Time) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var toDelete []int
+	for i, e := range r.store {
+		if e.CreatedAt.Before(before) {
+			toDelete = append(toDelete, i)
+		}
+	}
+	// Delete in reverse order to preserve indices.
+	for i := len(toDelete) - 1; i >= 0; i-- {
+		r.store = append(r.store[:toDelete[i]], r.store[toDelete[i]+1:]...)
+	}
+	return int64(len(toDelete)), nil
+}
+
 func (r *mockAuditRepo) List(_ context.Context, filter repository.AuditFilter) ([]model.AuditEvent, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

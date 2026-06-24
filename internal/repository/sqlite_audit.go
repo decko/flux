@@ -188,3 +188,13 @@ func (r *SQLiteAuditRepository) Latest(ctx context.Context) (*model.AuditEvent, 
 	}
 	return &event, nil
 }
+
+// PurgeOlderThan deletes audit events older than the given time.
+// Returns the count of deleted rows.
+func (r *SQLiteAuditRepository) PurgeOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM audit_events WHERE created_at < ?", before.UTC())
+	if err != nil {
+		return 0, fmt.Errorf("purging: %w", err)
+	}
+	return result.RowsAffected()
+}

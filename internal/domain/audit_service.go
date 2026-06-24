@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -118,4 +119,21 @@ func hashEvent(e model.AuditEvent) string {
 	input := e.PreviousHash + e.ActorID + string(e.Action) + e.ResourceType + e.ResourceID + e.CreatedAt.String()
 	h := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(h[:])
+}
+
+// PurgeOldEvents deletes audit events older than retentionDays and logs the count.
+// If retentionDays is <= 0, nothing is deleted.
+func (s *AuditService) PurgeOldEvents(ctx context.Context, retentionDays int) error {
+	if retentionDays <= 0 {
+		return nil
+	}
+	before := time.Now().UTC().AddDate(0, 0, -retentionDays)
+	count, err := s.repo.PurgeOlderThan(ctx, before)
+	if err != nil {
+		return fmt.Errorf("purge old events: %w", err)
+	}
+	if count > 0 {
+		slog.Info("purged old audit events", "count", count, "retention_days", retentionDays)
+	}
+	return nil
 }

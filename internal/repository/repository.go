@@ -170,6 +170,10 @@ type AuditRepository interface {
 	// Latest returns the most recent audit event (by created_at), or nil if
 	// no events exist. Used by the hash chain to link consecutive events.
 	Latest(ctx context.Context) (*model.AuditEvent, error)
+
+	// PurgeOlderThan deletes audit events older than the given time.
+	// Returns the count of deleted rows.
+	PurgeOlderThan(ctx context.Context, before time.Time) (int64, error)
 }
 
 // UserRepository defines the contract for user persistence.
