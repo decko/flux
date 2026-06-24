@@ -12,9 +12,20 @@ Write tests BEFORE implementation. Your tests define the contract.
 
 1. **Red**: Write a failing test that describes the desired behavior
 2. **Verify**: Run the test - it MUST fail (if it passes, the test is wrong or the feature already exists)
-3. **Green**: Hand off to go-coder to implement
-4. **Verify**: Run the test - it MUST pass
-5. **Refactor**: Improve test/implementation if needed
+3. **Commit**: `git add` the test files, then `git commit --no-verify -m "test(<scope>): <description>"` to record the RED phase in git history
+4. **Green**: Hand off to go-coder to implement
+5. **Verify**: Run the test - it MUST pass
+6. **Refactor**: Improve test/implementation if needed
+
+## Commit convention
+
+After writing tests and verifying they FAIL (RED phase), commit them immediately:
+```bash
+git add <test files>
+git commit --no-verify -m "test(<package>): <what the tests cover>"
+```
+
+Use `--no-verify` to skip pre-commit hooks (the tests are expected to fail at this point). The orchestrator will squash-merge later.
 
 ## Test Structure
 
@@ -99,3 +110,4 @@ func TestFunction(t *testing.T) {
 - Don't write tests that pass without implementation
 - Don't mock everything (prefer real dependencies when simple)
 - Don't orchestrate (that's flux-expert)
+- Don't skip committing — every test file must be committed after RED verification

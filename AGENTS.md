@@ -246,10 +246,9 @@ Then assign it before writing any code.
 1. Create or identify the GitHub issue → assign to decko
 2. Create a git worktree under .worktrees/task/<slug>
 3. Plan the approach (use go-architect for complex decisions)
-4. Write tests first (delegate to go-tester)
-5. Verify tests fail (RED)
-6. Implement (delegate to go-coder)
-7. Verify tests pass (GREEN)
+4. Write tests first (delegate to go-tester — it commits after RED verification)
+5. Implement (delegate to go-coder)
+6. Verify tests pass (GREEN)
 8. Run all DoD checks
 9. Request review (delegate to go-reviewer)
 10. Fix any review findings
