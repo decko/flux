@@ -32,6 +32,7 @@ func (r *mockAuditRepo) List(_ context.Context, _ repository.AuditFilter) ([]mod
 	return nil, nil
 }
 
+func (r *mockAuditRepo) Latest(_ context.Context) (*model.AuditEvent, error) { return nil, nil }
 func (r *mockAuditRepo) PurgeOlderThan(_ context.Context, _ time.Time) (int64, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
