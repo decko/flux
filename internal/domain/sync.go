@@ -15,14 +15,29 @@ import (
 	"github.com/decko/flux/internal/repository"
 )
 
-// SyncStatus holds the result of the last sync operation.
-// LastSyncAt is nil when no sync has been performed yet.
-type SyncStatus struct {
+// ProjectSyncStatus holds the sync result for a single project.
+type ProjectSyncStatus struct {
+	ProjectID     string
 	LastSyncAt    *time.Time
 	LastSyncError string
 	TicketsSynced int
 	PRsSynced     int
 }
+
+// SyncStatus holds the result of the last sync operation.
+// LastSyncAt is nil when no sync has been performed yet.
+// Projects contains per-project status for the last sync pass.
+type SyncStatus struct {
+	LastSyncAt    *time.Time
+	LastSyncError string
+	TicketsSynced int
+	PRsSynced     int
+	Projects      map[string]ProjectSyncStatus
+}
+
+// AdapterFactory creates adapters for a specific project.
+// Returns nil adapters if the project has no credentials configured.
+type AdapterFactory func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error)
 
 // SyncService periodically syncs tickets and pull requests from
 // external adapters into the local repository. It supports both
@@ -32,12 +47,12 @@ type SyncService struct {
 	TicketRepo repository.TicketRepository
 	// PRRepo is the repository for persisting synced pull requests.
 	PRRepo repository.PullRequestRepository
-	// TicketAdapter is the external ticket source adapter.
-	TicketAdapter ticket.TicketAdapter
-	// SCMAdapter is the external SCM source adapter.
-	SCMAdapter scm.SCMAdapter
-	interval   time.Duration
-	logger     *slog.Logger
+	// ProjectRepo is the repository for persisting projects.
+	ProjectRepo repository.ProjectRepository
+	// Factory creates per-project adapters for sync.
+	Factory  AdapterFactory
+	interval time.Duration
+	logger   *slog.Logger
 
 	mu      sync.Mutex
 	status  SyncStatus
@@ -66,17 +81,20 @@ type prKey struct {
 func NewSyncService(
 	ticketRepo repository.TicketRepository,
 	prRepo repository.PullRequestRepository,
-	ticketAdapter ticket.TicketAdapter,
-	scmAdapter scm.SCMAdapter,
+	projectRepo repository.ProjectRepository,
+	factory AdapterFactory,
 	interval time.Duration,
 ) *SyncService {
 	return &SyncService{
-		TicketRepo:    ticketRepo,
-		PRRepo:        prRepo,
-		TicketAdapter: ticketAdapter,
-		SCMAdapter:    scmAdapter,
-		interval:      interval,
-		logger:        slog.Default(),
+		TicketRepo:  ticketRepo,
+		PRRepo:      prRepo,
+		ProjectRepo: projectRepo,
+		Factory:     factory,
+		interval:    interval,
+		logger:      slog.Default(),
+		status: SyncStatus{
+			Projects: make(map[string]ProjectSyncStatus),
+		},
 	}
 }
 
@@ -118,13 +136,13 @@ func (s *SyncService) Run(ctx context.Context) {
 		s.mu.Unlock()
 	}()
 
-	// Immediate first sync.
-	_ = s.syncOnce(ctx, "")
+	// Immediate first sync of all projects.
+	_ = s.SyncNow(ctx)
 
 	for {
 		select {
 		case <-s.ticker.C:
-			_ = s.syncOnce(ctx, "")
+			_ = s.SyncNow(ctx)
 		case <-ctx.Done():
 			close(s.done)
 			return
@@ -158,21 +176,93 @@ func (s *SyncService) Stop() {
 	}
 }
 
-// SyncNow performs a one-shot synchronization for the given project.
-// It returns an error only if the context is canceled; adapter errors
-// are recorded in the sync status but not propagated.
-func (s *SyncService) SyncNow(ctx context.Context, projectID string) error {
+// SyncProject performs a one-shot synchronization for a single project.
+// It returns an error only if the project is not found or the context
+// is canceled; adapter errors are recorded in per-project sync status
+// but not propagated.
+func (s *SyncService) SyncProject(ctx context.Context, projectID string) error {
 	return s.syncOnce(ctx, projectID)
 }
 
-// syncOnce is the core sync logic. It fetches tickets and pull requests
-// from the respective adapters and upserts them into the local repository
-// using a single-pass map lookup for O(1) duplicate detection.
-// Errors from one adapter do not block the other. Returns an error only
-// if the context has been canceled.
+// SyncNow performs a one-shot synchronization for all registered projects.
+// It returns an error only if the project list cannot be retrieved or the
+// context is canceled; individual project failures are isolated and do not
+// block other projects.
+func (s *SyncService) SyncNow(ctx context.Context) error {
+	projects, err := s.ProjectRepo.List(ctx, repository.ProjectFilter{})
+	if err != nil {
+		return err
+	}
+	for _, p := range projects {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		_ = s.syncOnce(ctx, p.ID)
+	}
+	// Recompute aggregate status from per-project statuses.
+	s.mu.Lock()
+	var totalTickets, totalPRs int
+	var firstErr string
+	var latestSync *time.Time
+	for _, ps := range s.status.Projects {
+		totalTickets += ps.TicketsSynced
+		totalPRs += ps.PRsSynced
+		if ps.LastSyncError != "" && firstErr == "" {
+			firstErr = ps.LastSyncError
+		}
+		if ps.LastSyncAt != nil && (latestSync == nil || ps.LastSyncAt.After(*latestSync)) {
+			t := *ps.LastSyncAt
+			latestSync = &t
+		}
+	}
+	s.status.TicketsSynced = totalTickets
+	s.status.PRsSynced = totalPRs
+	s.status.LastSyncError = firstErr
+	if latestSync != nil {
+		s.status.LastSyncAt = latestSync
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+// syncOnce is the core sync logic for a single project. It verifies the
+// project exists, gets per-project adapters from the factory, then fetches
+// tickets and pull requests from the respective adapters and upserts them
+// into the local repository using a single-pass map lookup for O(1) duplicate
+// detection. Errors from one adapter do not block the other. Returns an error
+// only if the project is not found or the context has been canceled.
 func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+
+	// Verify the project exists.
+	if _, err := s.ProjectRepo.Get(ctx, projectID); err != nil {
+		return fmt.Errorf("sync project %s: %w", projectID, err)
+	}
+
+	// Get per-project adapters from the factory.
+	ticketAdapter, scmAdapter, err := s.Factory(projectID)
+	if err != nil {
+		s.logger.Warn("skipping project: no adapters available",
+			"project_id", projectID,
+			"err", err,
+		)
+		// Mark per-project status with the error and return.
+		s.mu.Lock()
+		now := time.Now()
+		ps := ProjectSyncStatus{
+			ProjectID:     projectID,
+			LastSyncAt:    &now,
+			LastSyncError: err.Error(),
+		}
+		s.status.Projects[projectID] = ps
+		s.status.LastSyncAt = &now
+		s.status.LastSyncError = err.Error()
+		s.status.TicketsSynced = 0
+		s.status.PRsSynced = 0
+		s.mu.Unlock()
+		return nil
 	}
 
 	var lastErr error
@@ -180,11 +270,15 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 	prCount := 0
 
 	// Fetch and upsert tickets.
-	if s.TicketAdapter != nil {
-		tickets, err := s.TicketAdapter.ListTickets(ctx, projectID)
-		if err != nil {
-			lastErr = err
+	if ticketAdapter != nil {
+		tickets, listErr := ticketAdapter.ListTickets(ctx, projectID)
+		if listErr != nil {
+			lastErr = listErr
 		} else {
+			// Ensure ProjectID is set on returned tickets (some adapters omit it).
+			for i := range tickets {
+				tickets[i].ProjectID = projectID
+			}
 			// Build lookup map of existing tickets for O(1) upsert matching.
 			existingTickets, listErr := s.TicketRepo.List(ctx, repository.TicketFilter{ProjectID: projectID})
 			byKey := make(map[ticketKey]model.Ticket, len(existingTickets))
@@ -203,8 +297,8 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 					return err
 				}
 				key := ticketKey{ProjectID: t.ProjectID, Source: t.Source, ExternalID: t.ExternalID}
-				if _, ok := byKey[key]; ok {
-					if err := s.updateTicket(ctx, byKey[key], t); err != nil {
+				if existing, ok := byKey[key]; ok {
+					if err := s.updateTicket(ctx, existing, t); err != nil {
 						s.logger.Error("upsert ticket failed", "external_id", t.ExternalID, "err", err)
 					} else {
 						ticketCount++
@@ -221,11 +315,15 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 	}
 
 	// Fetch and upsert pull requests.
-	if s.SCMAdapter != nil {
-		prs, err := s.SCMAdapter.ListPullRequests(ctx, projectID)
-		if err != nil {
-			lastErr = err
+	if scmAdapter != nil {
+		prs, listErr := scmAdapter.ListPullRequests(ctx, projectID)
+		if listErr != nil {
+			lastErr = listErr
 		} else {
+			// Ensure ProjectID is set on returned PRs (some adapters omit it).
+			for i := range prs {
+				prs[i].ProjectID = projectID
+			}
 			// Build lookup map of existing PRs for O(1) upsert matching.
 			existingPRs, listErr := s.PRRepo.List(ctx, repository.PullRequestFilter{ProjectID: projectID})
 			byKey := make(map[prKey]model.PullRequest, len(existingPRs))
@@ -244,8 +342,8 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 					return err
 				}
 				key := prKey{ProjectID: pr.ProjectID, Source: pr.Source, ExternalID: pr.ExternalID}
-				if _, ok := byKey[key]; ok {
-					if err := s.updatePR(ctx, byKey[key], pr); err != nil {
+				if existing, ok := byKey[key]; ok {
+					if err := s.updatePR(ctx, existing, pr); err != nil {
 						s.logger.Error("upsert PR failed", "external_id", pr.ExternalID, "err", err)
 					} else {
 						prCount++
@@ -261,9 +359,19 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 		}
 	}
 
-	// Update status under lock.
+	// Update per-project and aggregate status under lock.
 	s.mu.Lock()
 	now := time.Now()
+	ps := ProjectSyncStatus{
+		ProjectID:     projectID,
+		LastSyncAt:    &now,
+		TicketsSynced: ticketCount,
+		PRsSynced:     prCount,
+	}
+	if lastErr != nil {
+		ps.LastSyncError = lastErr.Error()
+	}
+	s.status.Projects[projectID] = ps
 	s.status.LastSyncAt = &now
 	if lastErr != nil {
 		s.status.LastSyncError = lastErr.Error()
@@ -275,6 +383,7 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 	s.mu.Unlock()
 
 	s.logger.Info("sync complete",
+		"project_id", projectID,
 		"tickets", ticketCount,
 		"prs", prCount,
 		"err", lastErr,

@@ -167,21 +167,33 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("parse sync interval: %w", err)
 	}
-	syncSvc := domain.NewSyncService(ticketRepo, prRepo, nil, nil, syncInterval)
 
-	// Build GitHub adapters if a token is configured.
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		for _, a := range cfg.Adapters {
+	// Build factory for per-project adapters.
+	factory := func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+		project, err := projectRepo.Get(ctx, projectID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get project %s: %w", projectID, err)
+		}
+		for _, a := range project.Adapters {
 			if a.Type == "github" {
-				slog.Info("configuring github adapter", "owner", a.Owner, "repo", a.Repo)
-				ticketAdapter := ticket.NewGitHubAdapter(a.Owner, a.Repo, token, nil)
-				scmAdapter := scm.NewGitHubAdapter(a.Owner, a.Repo, token, nil)
-				syncSvc.TicketAdapter = ticketAdapter
-				syncSvc.SCMAdapter = scmAdapter
-				break // first github adapter only for now
+				token := os.Getenv("GITHUB_TOKEN")
+				if token == "" {
+					return nil, nil, fmt.Errorf("github token not configured")
+				}
+				owner := a.Config["owner"]
+				repo := a.Config["repo"]
+				if owner == "" || repo == "" {
+					return nil, nil, fmt.Errorf("github adapter missing owner or repo for project %s", projectID)
+				}
+				slog.Info("configuring github adapter", "project_id", projectID, "owner", owner, "repo", repo)
+				return ticket.NewGitHubAdapter(owner, repo, token, nil),
+					scm.NewGitHubAdapter(owner, repo, token, nil),
+					nil
 			}
 		}
+		return nil, nil, fmt.Errorf("no ticket adapter configured for project %s", projectID)
 	}
+	syncSvc := domain.NewSyncService(ticketRepo, prRepo, projectRepo, factory, syncInterval)
 
 	// Start background sync loop.
 	go syncSvc.Run(ctx)

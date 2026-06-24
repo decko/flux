@@ -7,9 +7,72 @@ import (
 	"testing"
 	"time"
 
+	"github.com/decko/flux/internal/adapter/scm"
+	"github.com/decko/flux/internal/adapter/ticket"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
+
+// ─── Mock: ProjectRepository ──────────────────────────────────────────────
+
+type mockProjectRepo struct {
+	mu    sync.Mutex
+	store map[string]model.Project
+}
+
+func newMockProjectRepo() *mockProjectRepo {
+	return &mockProjectRepo{store: make(map[string]model.Project)}
+}
+
+func (r *mockProjectRepo) Create(_ context.Context, p model.Project) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.store[p.ID]; exists {
+		return errors.New("already exists")
+	}
+	r.store[p.ID] = p
+	return nil
+}
+
+func (r *mockProjectRepo) Get(_ context.Context, id string) (model.Project, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, exists := r.store[id]
+	if !exists {
+		return model.Project{}, repository.ErrNotFound
+	}
+	return p, nil
+}
+
+func (r *mockProjectRepo) List(_ context.Context, _ repository.ProjectFilter) ([]model.Project, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var result []model.Project
+	for _, p := range r.store {
+		result = append(result, p)
+	}
+	return result, nil
+}
+
+func (r *mockProjectRepo) Update(_ context.Context, p model.Project) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.store[p.ID]; !exists {
+		return repository.ErrNotFound
+	}
+	r.store[p.ID] = p
+	return nil
+}
+
+func (r *mockProjectRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.store[id]; !exists {
+		return repository.ErrNotFound
+	}
+	delete(r.store, id)
+	return nil
+}
 
 // ─── Mock: TicketRepository ─────────────────────────────────────────────────
 
@@ -241,16 +304,29 @@ func samplePR(projectID, externalID string) model.PullRequest {
 	}
 }
 
+// mustCreateProject inserts a project into the mock project repo. Fails the
+// test on error.
+func mustCreateProject(t *testing.T, repo *mockProjectRepo, p model.Project) {
+	t.Helper()
+	if err := repo.Create(context.Background(), p); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 func TestNewSyncService(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
-	ticketAdapter := &stubTicketAdapter{name: "test-ticket"}
-	scmAdapter := &stubSCMAdapter{name: "test-scm"}
+	projectRepo := newMockProjectRepo()
+	ticketStub := &stubTicketAdapter{name: "test-ticket"}
+	scmStub := &stubSCMAdapter{name: "test-scm"}
 	interval := 5 * time.Minute
 
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, interval)
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(_ string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketStub, scmStub, nil
+		}, interval)
 	if svc == nil {
 		t.Fatal("NewSyncService returned nil")
 	}
@@ -271,9 +347,12 @@ func TestNewSyncService(t *testing.T) {
 	}
 }
 
-func TestSyncService_SyncNow_Tickets(t *testing.T) {
+func TestSyncService_SyncProject_Tickets(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
 	ticketAdapter := &stubTicketAdapter{
 		name: "test-ticket",
 		tickets: []model.Ticket{
@@ -282,10 +361,13 @@ func TestSyncService_SyncNow_Tickets(t *testing.T) {
 		},
 	}
 	scmAdapter := &stubSCMAdapter{name: "test-scm"}
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, 5*time.Minute)
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
 
 	ctx := context.Background()
-	err := svc.SyncNow(ctx, "proj-1")
+	err := svc.SyncProject(ctx, "proj-1")
 	must(t, err)
 
 	// Verify both tickets were created in the repo.
@@ -321,9 +403,12 @@ func TestSyncService_SyncNow_Tickets(t *testing.T) {
 	}
 }
 
-func TestSyncService_SyncNow_PRs(t *testing.T) {
+func TestSyncService_SyncProject_PRs(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
 	ticketAdapter := &stubTicketAdapter{name: "test-ticket"}
 	scmAdapter := &stubSCMAdapter{
 		name: "test-scm",
@@ -333,10 +418,13 @@ func TestSyncService_SyncNow_PRs(t *testing.T) {
 			samplePR("proj-1", "ext-3"),
 		},
 	}
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, 5*time.Minute)
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
 
 	ctx := context.Background()
-	err := svc.SyncNow(ctx, "proj-1")
+	err := svc.SyncProject(ctx, "proj-1")
 	must(t, err)
 
 	list, err := prRepo.List(ctx, repository.PullRequestFilter{ProjectID: "proj-1"})
@@ -363,9 +451,12 @@ func TestSyncService_SyncNow_PRs(t *testing.T) {
 	}
 }
 
-func TestSyncService_SyncNow_BothAdapters(t *testing.T) {
+func TestSyncService_SyncProject_BothAdapters(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
 	ticketAdapter := &stubTicketAdapter{
 		name: "test-ticket",
 		tickets: []model.Ticket{
@@ -379,10 +470,13 @@ func TestSyncService_SyncNow_BothAdapters(t *testing.T) {
 			samplePR("proj-1", "ext-1"),
 		},
 	}
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, 5*time.Minute)
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
 
 	ctx := context.Background()
-	err := svc.SyncNow(ctx, "proj-1")
+	err := svc.SyncProject(ctx, "proj-1")
 	must(t, err)
 
 	tickets, err := ticketRepo.List(ctx, repository.TicketFilter{ProjectID: "proj-1"})
@@ -406,9 +500,12 @@ func TestSyncService_SyncNow_BothAdapters(t *testing.T) {
 	}
 }
 
-func TestSyncService_SyncNow_TicketError(t *testing.T) {
+func TestSyncService_SyncProject_TicketError(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
 	ticketAdapter := &stubTicketAdapter{
 		name:    "test-ticket",
 		listErr: errors.New("ticket API error"),
@@ -419,13 +516,16 @@ func TestSyncService_SyncNow_TicketError(t *testing.T) {
 			samplePR("proj-1", "ext-1"),
 		},
 	}
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, 5*time.Minute)
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
 
 	ctx := context.Background()
-	err := svc.SyncNow(ctx, "proj-1")
-	// SyncNow should not return an error — it logs errors per adapter.
+	err := svc.SyncProject(ctx, "proj-1")
+	// SyncProject should not return an error — it logs errors per adapter.
 	if err != nil {
-		t.Fatalf("SyncNow should not return adapter errors, got: %v", err)
+		t.Fatalf("SyncProject should not return adapter errors, got: %v", err)
 	}
 
 	// PRs should still be synced despite ticket error.
@@ -454,9 +554,12 @@ func TestSyncService_SyncNow_TicketError(t *testing.T) {
 	}
 }
 
-func TestSyncService_SyncNow_SCMError(t *testing.T) {
+func TestSyncService_SyncProject_SCMError(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
 	ticketAdapter := &stubTicketAdapter{
 		name: "test-ticket",
 		tickets: []model.Ticket{
@@ -467,12 +570,15 @@ func TestSyncService_SyncNow_SCMError(t *testing.T) {
 		name:    "test-scm",
 		listErr: errors.New("SCM API error"),
 	}
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, 5*time.Minute)
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
 
 	ctx := context.Background()
-	err := svc.SyncNow(ctx, "proj-1")
+	err := svc.SyncProject(ctx, "proj-1")
 	if err != nil {
-		t.Fatalf("SyncNow should not return adapter errors, got: %v", err)
+		t.Fatalf("SyncProject should not return adapter errors, got: %v", err)
 	}
 
 	// Tickets should still be synced despite SCM error.
@@ -494,39 +600,45 @@ func TestSyncService_SyncNow_SCMError(t *testing.T) {
 	}
 }
 
-func TestSyncService_SyncNow_Upsert(t *testing.T) {
+func TestSyncService_SyncProject_Upsert(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
-	scmAdapter := &stubSCMAdapter{name: "test-scm"}
-	svc := NewSyncService(ticketRepo, prRepo, nil, scmAdapter, 5*time.Minute)
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
 
-	// Inject a ticket with the same ExternalID into what the adapter returns.
-	// We swap ticketAdapter for each pass to simulate the same external data.
+	scmAdapter := &stubSCMAdapter{name: "test-scm"}
+
+	// Use a closure variable so we can swap the ticket adapter.
+	var curTicketAdapter *stubTicketAdapter
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			// Return the adapter even if nil — the core sync handles nil gracefully.
+			return curTicketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
+
 	ctx := context.Background()
 
 	// First sync: create ticket.
-	adapter1 := &stubTicketAdapter{
+	curTicketAdapter = &stubTicketAdapter{
 		name: "test-ticket",
 		tickets: []model.Ticket{
 			sampleTicket("proj-1", "ext-same"),
 		},
 	}
-	svc.TicketAdapter = adapter1
-	err := svc.SyncNow(ctx, "proj-1")
+	err := svc.SyncProject(ctx, "proj-1")
 	must(t, err)
 
 	// Second sync: same ExternalID returned by adapter.
 	// The service should update the existing ticket, not create a duplicate.
-	adapter2 := &stubTicketAdapter{
+	curTicketAdapter = &stubTicketAdapter{
 		name: "test-ticket",
 		tickets: []model.Ticket{
 			sampleTicket("proj-1", "ext-same"),
 		},
 	}
 	// Change the title to verify update behavior.
-	adapter2.tickets[0].Title = "Updated Title"
-	svc.TicketAdapter = adapter2
-	err = svc.SyncNow(ctx, "proj-1")
+	curTicketAdapter.tickets[0].Title = "Updated Title"
+	err = svc.SyncProject(ctx, "proj-1")
 	must(t, err)
 
 	// Verify only 1 ticket exists for this project (not 2).
@@ -552,6 +664,9 @@ func TestSyncService_SyncNow_Upsert(t *testing.T) {
 func TestSyncService_Status(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
 	ticketAdapter := &stubTicketAdapter{
 		name: "test-ticket",
 		tickets: []model.Ticket{
@@ -559,7 +674,10 @@ func TestSyncService_Status(t *testing.T) {
 		},
 	}
 	scmAdapter := &stubSCMAdapter{name: "test-scm"}
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, 5*time.Minute)
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
 
 	// Status before sync.
 	before := svc.Status()
@@ -568,7 +686,7 @@ func TestSyncService_Status(t *testing.T) {
 	}
 
 	beforeSync := time.Now()
-	err := svc.SyncNow(context.Background(), "proj-1")
+	err := svc.SyncProject(context.Background(), "proj-1")
 	must(t, err)
 	afterSync := time.Now()
 
@@ -593,10 +711,17 @@ func TestSyncService_Status(t *testing.T) {
 func TestSyncService_RunStop(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
-	ticketAdapter := &stubTicketAdapter{name: "test-ticket"}
-	scmAdapter := &stubSCMAdapter{name: "test-scm"}
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
+	ticketStub := &stubTicketAdapter{name: "test-ticket"}
+	scmStub := &stubSCMAdapter{name: "test-scm"}
 	interval := 50 * time.Millisecond
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, interval)
+
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(_ string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketStub, scmStub, nil
+		}, interval)
 
 	// Run in background goroutine.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -623,9 +748,12 @@ func TestSyncService_RunStop(t *testing.T) {
 	}
 }
 
-func TestSyncService_SyncNow_ContextCanceled(t *testing.T) {
+func TestSyncService_SyncProject_ContextCanceled(t *testing.T) {
 	ticketRepo := newMockTicketRepo()
 	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
 	ticketAdapter := &stubTicketAdapter{
 		name: "test-ticket",
 		tickets: []model.Ticket{
@@ -633,13 +761,16 @@ func TestSyncService_SyncNow_ContextCanceled(t *testing.T) {
 		},
 	}
 	scmAdapter := &stubSCMAdapter{name: "test-scm"}
-	svc := NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, 5*time.Minute)
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
 
 	// Create a canceled context.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := svc.SyncNow(ctx, "proj-1")
+	err := svc.SyncProject(ctx, "proj-1")
 	if err == nil {
 		t.Fatal("expected error when context is canceled, got nil")
 	}
@@ -652,5 +783,452 @@ func TestSyncService_SyncNow_ContextCanceled(t *testing.T) {
 	must(t, listErr)
 	if len(list) != 0 {
 		t.Errorf("got %d tickets, want 0 (nothing should be created on canceled context)", len(list))
+	}
+}
+
+// ─── New Tests: Per-Project Sync ────────────────────────────────────────────
+
+func TestSyncService_SyncNow_MultipleProjects(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+
+	// Register two projects.
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Project One"})
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-2", Name: "Project Two"})
+
+	// Per-project adapter configs.
+	type projectAdapters struct {
+		ticket *stubTicketAdapter
+		scm    *stubSCMAdapter
+	}
+	adapters := map[string]projectAdapters{
+		"proj-1": {
+			ticket: &stubTicketAdapter{
+				name: "github",
+				tickets: []model.Ticket{
+					sampleTicket("proj-1", "ext-1"),
+					sampleTicket("proj-1", "ext-2"),
+				},
+			},
+			scm: &stubSCMAdapter{
+				name: "github",
+				prs: []model.PullRequest{
+					samplePR("proj-1", "ext-101"),
+				},
+			},
+		},
+		"proj-2": {
+			ticket: &stubTicketAdapter{
+				name: "jira",
+				tickets: []model.Ticket{
+					sampleTicket("proj-2", "ext-3"),
+				},
+			},
+			scm: &stubSCMAdapter{
+				name: "github",
+				prs: []model.PullRequest{
+					samplePR("proj-2", "ext-102"),
+					samplePR("proj-2", "ext-103"),
+				},
+			},
+		},
+	}
+
+	factory := func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+		a, ok := adapters[projectID]
+		if !ok {
+			return nil, nil, errors.New("unknown project")
+		}
+		return a.ticket, a.scm, nil
+	}
+
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo, factory, 5*time.Minute)
+
+	ctx := context.Background()
+	err := svc.SyncNow(ctx)
+	must(t, err)
+
+	// Verify proj-1 tickets.
+	p1Tickets, err := ticketRepo.List(ctx, repository.TicketFilter{ProjectID: "proj-1"})
+	must(t, err)
+	if len(p1Tickets) != 2 {
+		t.Errorf("proj-1: got %d tickets, want 2", len(p1Tickets))
+	}
+
+	// Verify proj-1 PRs.
+	p1PRs, err := prRepo.List(ctx, repository.PullRequestFilter{ProjectID: "proj-1"})
+	must(t, err)
+	if len(p1PRs) != 1 {
+		t.Errorf("proj-1: got %d PRs, want 1", len(p1PRs))
+	}
+
+	// Verify proj-2 tickets.
+	p2Tickets, err := ticketRepo.List(ctx, repository.TicketFilter{ProjectID: "proj-2"})
+	must(t, err)
+	if len(p2Tickets) != 1 {
+		t.Errorf("proj-2: got %d tickets, want 1", len(p2Tickets))
+	}
+
+	// Verify proj-2 PRs.
+	p2PRs, err := prRepo.List(ctx, repository.PullRequestFilter{ProjectID: "proj-2"})
+	must(t, err)
+	if len(p2PRs) != 2 {
+		t.Errorf("proj-2: got %d PRs, want 2", len(p2PRs))
+	}
+
+	// Verify aggregate status includes all projects.
+	status := svc.Status()
+	if status.TicketsSynced != 3 {
+		t.Errorf("got TicketsSynced %d, want 3 (2+1)", status.TicketsSynced)
+	}
+	if status.PRsSynced != 3 {
+		t.Errorf("got PRsSynced %d, want 3 (1+2)", status.PRsSynced)
+	}
+	if status.LastSyncAt == nil {
+		t.Error("expected non-zero LastSyncAt")
+	}
+}
+
+func TestSyncService_SyncProject_Isolation(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+
+	// Register two projects.
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Project One"})
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-2", Name: "Project Two"})
+
+	// Both projects have valid adapters but we only sync proj-1.
+	ticketAdapter := &stubTicketAdapter{
+		name: "test-ticket",
+		tickets: []model.Ticket{
+			sampleTicket("proj-1", "ext-1"),
+		},
+	}
+	scmAdapter := &stubSCMAdapter{name: "test-scm"}
+
+	factoryCallCount := 0
+	factory := func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+		factoryCallCount++
+		if projectID == "proj-1" {
+			return ticketAdapter, scmAdapter, nil
+		}
+		return nil, nil, errors.New("should not be called")
+	}
+
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo, factory, 5*time.Minute)
+
+	ctx := context.Background()
+	err := svc.SyncProject(ctx, "proj-1")
+	must(t, err)
+
+	// Verify only proj-1 data exists.
+	tickets, err := ticketRepo.List(ctx, repository.TicketFilter{})
+	must(t, err)
+	if len(tickets) != 1 {
+		t.Errorf("got %d total tickets, want 1", len(tickets))
+	}
+	for _, tk := range tickets {
+		if tk.ProjectID != "proj-1" {
+			t.Errorf("expected only proj-1 tickets, got project %q", tk.ProjectID)
+		}
+	}
+
+	// Factory should only have been called for the synced project.
+	if factoryCallCount != 1 {
+		t.Errorf("factory called %d times, want 1", factoryCallCount)
+	}
+
+	// Aggregate status should reflect only proj-1.
+	status := svc.Status()
+	if status.TicketsSynced != 1 {
+		t.Errorf("got TicketsSynced %d, want 1", status.TicketsSynced)
+	}
+}
+
+func TestSyncService_SyncProject_NotFound(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+
+	// Register one project, but try to sync a different one.
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Project One"})
+
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return nil, nil, errors.New("should not be called")
+		}, 5*time.Minute)
+
+	ctx := context.Background()
+	err := svc.SyncProject(ctx, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown project, got nil")
+	}
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+
+	// No data should have been synced.
+	tickets, listErr := ticketRepo.List(ctx, repository.TicketFilter{})
+	must(t, listErr)
+	if len(tickets) != 0 {
+		t.Errorf("got %d tickets, want 0", len(tickets))
+	}
+}
+
+func TestSyncService_SyncNow_SkipProject_NoToken(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+
+	// Register two projects: proj-1 has credentials, proj-2 does not.
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "With Token"})
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-2", Name: "No Token"})
+
+	factory := func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+		if projectID == "proj-2" {
+			return nil, nil, errors.New("no credentials for project")
+		}
+		return &stubTicketAdapter{
+			name: "test-ticket",
+			tickets: []model.Ticket{
+				sampleTicket("proj-1", "ext-1"),
+			},
+		}, &stubSCMAdapter{name: "test-scm"}, nil
+	}
+
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo, factory, 5*time.Minute)
+
+	ctx := context.Background()
+	err := svc.SyncNow(ctx)
+	must(t, err)
+
+	// Verify proj-1 was synced.
+	p1Tickets, err := ticketRepo.List(ctx, repository.TicketFilter{ProjectID: "proj-1"})
+	must(t, err)
+	if len(p1Tickets) != 1 {
+		t.Errorf("proj-1: got %d tickets, want 1", len(p1Tickets))
+	}
+
+	// Verify proj-2 was skipped (no data).
+	p2Tickets, err := ticketRepo.List(ctx, repository.TicketFilter{ProjectID: "proj-2"})
+	must(t, err)
+	if len(p2Tickets) != 0 {
+		t.Errorf("proj-2: got %d tickets, want 0 (project should be skipped)", len(p2Tickets))
+	}
+
+	p2PRs, err := prRepo.List(ctx, repository.PullRequestFilter{ProjectID: "proj-2"})
+	must(t, err)
+	if len(p2PRs) != 0 {
+		t.Errorf("proj-2: got %d PRs, want 0 (project should be skipped)", len(p2PRs))
+	}
+
+	// Aggregate should only reflect proj-1.
+	status := svc.Status()
+	if status.TicketsSynced != 1 {
+		t.Errorf("got TicketsSynced %d, want 1", status.TicketsSynced)
+	}
+	if status.PRsSynced != 0 {
+		t.Errorf("got PRsSynced %d, want 0", status.PRsSynced)
+	}
+}
+
+func TestSyncService_SyncNow_ProjectError_Isolation(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+
+	// Register two projects.
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Failing Project"})
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-2", Name: "Healthy Project"})
+
+	type projectAdapters struct {
+		ticket *stubTicketAdapter
+		scm    *stubSCMAdapter
+	}
+	adapters := map[string]projectAdapters{
+		"proj-1": {
+			ticket: &stubTicketAdapter{
+				name:    "failing-ticket",
+				listErr: errors.New("ticket API unavailable"),
+			},
+			scm: &stubSCMAdapter{
+				name:    "failing-scm",
+				listErr: errors.New("SCM API unavailable"),
+			},
+		},
+		"proj-2": {
+			ticket: &stubTicketAdapter{
+				name: "healthy-ticket",
+				tickets: []model.Ticket{
+					sampleTicket("proj-2", "ext-1"),
+				},
+			},
+			scm: &stubSCMAdapter{
+				name: "healthy-scm",
+				prs: []model.PullRequest{
+					samplePR("proj-2", "ext-101"),
+				},
+			},
+		},
+	}
+
+	factory := func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+		a, ok := adapters[projectID]
+		if !ok {
+			return nil, nil, errors.New("unknown project")
+		}
+		return a.ticket, a.scm, nil
+	}
+
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo, factory, 5*time.Minute)
+
+	ctx := context.Background()
+	err := svc.SyncNow(ctx)
+	must(t, err)
+
+	// proj-1 failed: no tickets or PRs should exist.
+	p1Tickets, err := ticketRepo.List(ctx, repository.TicketFilter{ProjectID: "proj-1"})
+	must(t, err)
+	if len(p1Tickets) != 0 {
+		t.Errorf("proj-1: got %d tickets, want 0 (adapter error should prevent sync)", len(p1Tickets))
+	}
+	p1PRs, err := prRepo.List(ctx, repository.PullRequestFilter{ProjectID: "proj-1"})
+	must(t, err)
+	if len(p1PRs) != 0 {
+		t.Errorf("proj-1: got %d PRs, want 0 (adapter error should prevent sync)", len(p1PRs))
+	}
+
+	// proj-2 synced successfully.
+	p2Tickets, err := ticketRepo.List(ctx, repository.TicketFilter{ProjectID: "proj-2"})
+	must(t, err)
+	if len(p2Tickets) != 1 {
+		t.Errorf("proj-2: got %d tickets, want 1", len(p2Tickets))
+	}
+	p2PRs, err := prRepo.List(ctx, repository.PullRequestFilter{ProjectID: "proj-2"})
+	must(t, err)
+	if len(p2PRs) != 1 {
+		t.Errorf("proj-2: got %d PRs, want 1", len(p2PRs))
+	}
+
+	// Aggregate should reflect only proj-2 (the successful one).
+	status := svc.Status()
+	if status.TicketsSynced != 1 {
+		t.Errorf("got TicketsSynced %d, want 1", status.TicketsSynced)
+	}
+	if status.PRsSynced != 1 {
+		t.Errorf("got PRsSynced %d, want 1", status.PRsSynced)
+	}
+	// LastSyncError should be set (from proj-1's failure).
+	if status.LastSyncError == "" {
+		t.Error("expected LastSyncError to be set from project error")
+	}
+}
+
+func TestSyncService_PerProjectStatus(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+
+	// Register two projects.
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Project One"})
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-2", Name: "Project Two"})
+
+	type projectAdapters struct {
+		ticket *stubTicketAdapter
+		scm    *stubSCMAdapter
+	}
+	adapters := map[string]projectAdapters{
+		"proj-1": {
+			ticket: &stubTicketAdapter{
+				name: "github",
+				tickets: []model.Ticket{
+					sampleTicket("proj-1", "ext-1"),
+					sampleTicket("proj-1", "ext-2"),
+				},
+			},
+			scm: &stubSCMAdapter{
+				name: "github",
+				prs: []model.PullRequest{
+					samplePR("proj-1", "ext-101"),
+				},
+			},
+		},
+		"proj-2": {
+			ticket: &stubTicketAdapter{
+				name: "jira",
+				tickets: []model.Ticket{
+					sampleTicket("proj-2", "ext-3"),
+				},
+			},
+			scm: &stubSCMAdapter{
+				name: "github",
+				prs: []model.PullRequest{
+					samplePR("proj-2", "ext-102"),
+					samplePR("proj-2", "ext-103"),
+				},
+			},
+		},
+	}
+
+	factory := func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+		a, ok := adapters[projectID]
+		if !ok {
+			return nil, nil, errors.New("unknown project")
+		}
+		return a.ticket, a.scm, nil
+	}
+
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo, factory, 5*time.Minute)
+
+	ctx := context.Background()
+	err := svc.SyncNow(ctx)
+	must(t, err)
+
+	status := svc.Status()
+
+	// Verify per-project status for proj-1.
+	ps1, ok := status.Projects["proj-1"]
+	if !ok {
+		t.Fatal("expected per-project status for proj-1")
+	}
+	if ps1.TicketsSynced != 2 {
+		t.Errorf("proj-1 TicketsSynced: got %d, want 2", ps1.TicketsSynced)
+	}
+	if ps1.PRsSynced != 1 {
+		t.Errorf("proj-1 PRsSynced: got %d, want 1", ps1.PRsSynced)
+	}
+	if ps1.LastSyncAt == nil {
+		t.Error("proj-1: expected non-nil LastSyncAt")
+	}
+	if ps1.LastSyncError != "" {
+		t.Errorf("proj-1: unexpected LastSyncError %q", ps1.LastSyncError)
+	}
+
+	// Verify per-project status for proj-2.
+	ps2, ok := status.Projects["proj-2"]
+	if !ok {
+		t.Fatal("expected per-project status for proj-2")
+	}
+	if ps2.TicketsSynced != 1 {
+		t.Errorf("proj-2 TicketsSynced: got %d, want 1", ps2.TicketsSynced)
+	}
+	if ps2.PRsSynced != 2 {
+		t.Errorf("proj-2 PRsSynced: got %d, want 2", ps2.PRsSynced)
+	}
+	if ps2.LastSyncAt == nil {
+		t.Error("proj-2: expected non-nil LastSyncAt")
+	}
+	if ps2.LastSyncError != "" {
+		t.Errorf("proj-2: unexpected LastSyncError %q", ps2.LastSyncError)
+	}
+
+	// Verify aggregate status matches sum.
+	if status.TicketsSynced != 3 {
+		t.Errorf("aggregate TicketsSynced: got %d, want 3", status.TicketsSynced)
+	}
+	if status.PRsSynced != 3 {
+		t.Errorf("aggregate PRsSynced: got %d, want 3", status.PRsSynced)
 	}
 }
