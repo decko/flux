@@ -188,9 +188,18 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 			if err != nil {
 				return nil, nil, fmt.Errorf("app auth token: %w", err)
 			}
+			// Get owner/repo from adapter config.
+			owner, repo := "", ""
+			for _, a := range project.Adapters {
+				if a.Type == "github" {
+					owner = a.Config["owner"]
+					repo = a.Config["repo"]
+					break
+				}
+			}
 			slog.Info("using github app auth", "project_id", projectID, "installation_id", project.InstallationID)
-			return ticket.NewGitHubAdapter("", "", token, nil),
-				scm.NewGitHubAdapter("", "", token, nil),
+			return ticket.NewGitHubAdapter(owner, repo, token, nil),
+				scm.NewGitHubAdapter(owner, repo, token, nil),
 				nil
 		}
 		// Fallback: adapter config + GITHUB_TOKEN.
