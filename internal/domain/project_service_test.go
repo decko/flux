@@ -2,14 +2,18 @@ package domain_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"sync"
 	"testing"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
+	"github.com/decko/flux/pkg/authctx"
 )
 
 // ─── Mock: ProjectRepository ──────────────────────────────────────────────
@@ -289,4 +293,125 @@ func TestProjectService_Delete_NotFound(t *testing.T) {
 	if !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
+}
+
+// ─── Audit Integration Tests ─────────────────────────────────────────────────
+
+// setupAuditDB creates an in-memory SQLite audit repository for testing.
+func setupAuditDB(t *testing.T) *repository.SQLiteAuditRepository {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open in-memory SQLite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		t.Fatalf("failed to configure SQLite: %v", err)
+	}
+	repo := repository.NewSQLiteAuditRepository(db)
+	if err := repo.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to run migration: %v", err)
+	}
+	return repo
+}
+
+func TestProjectService_Create_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	projectRepo := newMockProjectRepo()
+	svc := domain.NewProjectService(projectRepo, domain.WithAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	p := testProject("proj-audit-1", "audit-test")
+	must(t, svc.Create(ctx, p))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 1 {
+		t.Fatalf("got %d audit events, want 1", len(events))
+	}
+	if events[0].Action != model.AuditAction("project.created") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "project.created")
+	}
+	if events[0].ResourceID != p.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, p.ID)
+	}
+	if events[0].ActorID != "test-user" {
+		t.Errorf("ActorID = %q, want %q", events[0].ActorID, "test-user")
+	}
+}
+
+func TestProjectService_Update_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	projectRepo := newMockProjectRepo()
+	svc := domain.NewProjectService(projectRepo, domain.WithAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	p := testProject("proj-audit-2", "original")
+	must(t, svc.Create(ctx, p))
+
+	p.Name = "updated"
+	must(t, svc.Update(ctx, p))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + update)", len(events))
+	}
+	if events[0].Action != model.AuditAction("project.updated") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "project.updated")
+	}
+	if events[0].ResourceID != p.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, p.ID)
+	}
+}
+
+func TestProjectService_Delete_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	projectRepo := newMockProjectRepo()
+	svc := domain.NewProjectService(projectRepo, domain.WithAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	p := testProject("proj-audit-3", "delete-me")
+	must(t, svc.Create(ctx, p))
+
+	// Reset audit events so we only check delete event.
+	must(t, svc.Delete(ctx, p.ID))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + delete)", len(events))
+	}
+	if events[0].Action != model.AuditAction("project.deleted") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "project.deleted")
+	}
+	if events[0].ResourceID != p.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, p.ID)
+	}
+}
+
+func TestProjectService_AuditNil(t *testing.T) {
+	projectRepo := newMockProjectRepo()
+	svc := domain.NewProjectService(projectRepo) // no audit service
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	p := testProject("proj-noaudit", "no-audit")
+	must(t, svc.Create(ctx, p))
+
+	// Verify operation still succeeds.
+	got, err := svc.Get(ctx, "proj-noaudit")
+	must(t, err)
+	if got.Name != "no-audit" {
+		t.Errorf("got Name %q, want %q", got.Name, "no-audit")
+	}
+
+	// Update with nil audit.
+	p.Name = "still-no-audit"
+	must(t, svc.Update(ctx, p))
+
+	// Delete with nil audit.
+	must(t, svc.Delete(ctx, "proj-noaudit"))
 }

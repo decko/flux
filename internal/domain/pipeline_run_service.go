@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/decko/flux/internal/adapter/orchestrator"
@@ -16,6 +17,7 @@ import (
 type PipelineRunService struct {
 	repo         repository.PipelineRunRepository
 	orchestrator *orchestrator.OrchestratorAdapter
+	audit        *AuditService
 }
 
 // PipelineRunServiceOption configures a PipelineRunService.
@@ -25,6 +27,14 @@ type PipelineRunServiceOption func(*PipelineRunService)
 func WithOrchestrator(adapter orchestrator.OrchestratorAdapter) PipelineRunServiceOption {
 	return func(s *PipelineRunService) {
 		s.orchestrator = &adapter
+	}
+}
+
+// WithPipelineRunAuditService sets the audit service for recording pipeline
+// run events.
+func WithPipelineRunAuditService(audit *AuditService) PipelineRunServiceOption {
+	return func(s *PipelineRunService) {
+		s.audit = audit
 	}
 }
 
@@ -45,6 +55,11 @@ func (s *PipelineRunService) Create(ctx context.Context, run model.PipelineRun) 
 	}
 	if err := s.repo.Create(ctx, run); err != nil {
 		return fmt.Errorf("create pipeline run: %w", err)
+	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "pipeline_run.created", "pipeline_run", run.ID, marshalPipelineRun(run)); err != nil {
+			return fmt.Errorf("create pipeline run: %w", err)
+		}
 	}
 	return nil
 }
@@ -77,6 +92,11 @@ func (s *PipelineRunService) Update(ctx context.Context, run model.PipelineRun) 
 	}
 	if err := s.repo.Update(ctx, run); err != nil {
 		return fmt.Errorf("update pipeline run: %w", err)
+	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "pipeline_run.updated", "pipeline_run", run.ID, marshalPipelineRun(run)); err != nil {
+			return fmt.Errorf("update pipeline run: %w", err)
+		}
 	}
 	return nil
 }
@@ -111,6 +131,11 @@ func (s *PipelineRunService) TriggerWithTicketID(ctx context.Context, runID, ext
 	if err := s.repo.Update(ctx, run); err != nil {
 		return fmt.Errorf("trigger pipeline run: %w", err)
 	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "pipeline_run.triggered", "pipeline_run", runID, ""); err != nil {
+			return fmt.Errorf("trigger pipeline run: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -134,5 +159,20 @@ func (s *PipelineRunService) Cancel(ctx context.Context, runID string) error {
 	if err := s.repo.Update(ctx, run); err != nil {
 		return fmt.Errorf("cancel pipeline run: %w", err)
 	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "pipeline_run.canceled", "pipeline_run", runID, ""); err != nil {
+			return fmt.Errorf("cancel pipeline run: %w", err)
+		}
+	}
 	return nil
+}
+
+// marshalPipelineRun serializes a pipeline run to a JSON string.
+// If marshaling fails, it returns an empty string.
+func marshalPipelineRun(run model.PipelineRun) string {
+	b, err := json.Marshal(run)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

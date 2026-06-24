@@ -11,6 +11,7 @@ import (
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
+	"github.com/decko/flux/pkg/authctx"
 )
 
 // ─── Mock: PipelineRunRepository ────────────────────────────────────────────
@@ -377,4 +378,135 @@ func TestPipelineRunService_Cancel_NotFound(t *testing.T) {
 	if !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
+}
+
+// ─── Audit Integration Tests ─────────────────────────────────────────────────
+
+func TestPipelineRunService_Create_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	runRepo := newMockPipelineRunRepo()
+	svc := domain.NewPipelineRunService(runRepo, domain.WithPipelineRunAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	run := testPipelineRun("run-audit-1", "proj-1", "ticket-1", model.RunStatusPending)
+	must(t, svc.Create(ctx, run))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 1 {
+		t.Fatalf("got %d audit events, want 1", len(events))
+	}
+	if events[0].Action != model.AuditAction("pipeline_run.created") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "pipeline_run.created")
+	}
+	if events[0].ResourceID != run.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, run.ID)
+	}
+	if events[0].ActorID != "test-user" {
+		t.Errorf("ActorID = %q, want %q", events[0].ActorID, "test-user")
+	}
+}
+
+func TestPipelineRunService_Update_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	runRepo := newMockPipelineRunRepo()
+	svc := domain.NewPipelineRunService(runRepo, domain.WithPipelineRunAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	run := testPipelineRun("run-audit-2", "proj-1", "ticket-1", model.RunStatusPending)
+	must(t, svc.Create(ctx, run))
+
+	run.Status = model.RunStatusRunning
+	must(t, svc.Update(ctx, run))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + update)", len(events))
+	}
+	if events[0].Action != model.AuditAction("pipeline_run.updated") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "pipeline_run.updated")
+	}
+	if events[0].ResourceID != run.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, run.ID)
+	}
+}
+
+func TestPipelineRunService_Trigger_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	runRepo := newMockPipelineRunRepo()
+	orch := &stubOrchestrator{}
+	svc := domain.NewPipelineRunService(runRepo,
+		domain.WithOrchestrator(orch),
+		domain.WithPipelineRunAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	run := testPipelineRun("run-audit-3", "proj-1", "ticket-1", model.RunStatusPending)
+	must(t, svc.Create(ctx, run))
+
+	must(t, svc.Trigger(ctx, run.ID))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + trigger)", len(events))
+	}
+	if events[0].Action != model.AuditAction("pipeline_run.triggered") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "pipeline_run.triggered")
+	}
+	if events[0].ResourceID != run.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, run.ID)
+	}
+}
+
+func TestPipelineRunService_Cancel_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	runRepo := newMockPipelineRunRepo()
+	orch := &stubOrchestrator{}
+	svc := domain.NewPipelineRunService(runRepo,
+		domain.WithOrchestrator(orch),
+		domain.WithPipelineRunAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	run := testPipelineRun("run-audit-4", "proj-1", "ticket-1", model.RunStatusRunning)
+	must(t, svc.Create(ctx, run))
+
+	must(t, svc.Cancel(ctx, run.ID))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + cancel)", len(events))
+	}
+	if events[0].Action != model.AuditAction("pipeline_run.canceled") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "pipeline_run.canceled")
+	}
+	if events[0].ResourceID != run.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, run.ID)
+	}
+}
+
+func TestPipelineRunService_AuditNil(t *testing.T) {
+	runRepo := newMockPipelineRunRepo()
+	orch := &stubOrchestrator{}
+	svc := domain.NewPipelineRunService(runRepo, domain.WithOrchestrator(orch)) // no audit
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	run := testPipelineRun("run-noaudit", "proj-1", "ticket-1", model.RunStatusPending)
+	must(t, svc.Create(ctx, run))
+
+	got, err := svc.Get(ctx, "run-noaudit")
+	must(t, err)
+	if got.ID != run.ID {
+		t.Errorf("got ID %q, want %q", got.ID, run.ID)
+	}
+
+	run.Status = model.RunStatusRunning
+	must(t, svc.Update(ctx, run))
+	must(t, svc.Trigger(ctx, "run-noaudit"))
+	must(t, svc.Cancel(ctx, "run-noaudit"))
 }
