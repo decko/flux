@@ -12,6 +12,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/decko/flux/internal/model"
 )
@@ -139,6 +140,32 @@ type PipelineRunRepository interface {
 	// Update modifies an existing pipeline run. Returns ErrNotFound if no
 	// run with the run's ID exists.
 	Update(ctx context.Context, run model.PipelineRun) error
+}
+
+// AuditFilter defines criteria for listing audit events.
+// Zero values are ignored; only non-zero fields are used for filtering.
+type AuditFilter struct {
+	ActorID      string
+	ResourceType string
+	ResourceID   string
+	Action       string
+	Since        time.Time
+	Until        time.Time
+	Limit        int
+	Offset       int
+}
+
+// AuditRepository defines the contract for audit event persistence.
+// Audit records are append-only — there are no Update or Delete operations.
+type AuditRepository interface {
+	// Insert persists a new audit event. If the event's ID is empty, a UUID
+	// is generated automatically.
+	Insert(ctx context.Context, event model.AuditEvent) error
+
+	// List returns audit events matching the given filter criteria.
+	// Events are ordered by created_at descending (most recent first).
+	// Zero values in the filter are ignored.
+	List(ctx context.Context, filter AuditFilter) ([]model.AuditEvent, error)
 }
 
 // UserRepository defines the contract for user persistence.
