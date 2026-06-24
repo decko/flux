@@ -50,6 +50,8 @@ func (s *Server) registerRoutes() {
 			r.Post("/sync/trigger", s.handleSyncTrigger)
 			r.Get("/adapters", s.handleListAdapters)
 			r.Get("/adapters/{type}/health", s.handleAdapterHealth)
+
+			r.Get("/audit/integrity", s.handleAuditIntegrity)
 		})
 	})
 

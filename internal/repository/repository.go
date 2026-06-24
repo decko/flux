@@ -141,6 +141,23 @@ type PipelineRunRepository interface {
 	Update(ctx context.Context, run model.PipelineRun) error
 }
 
+// AuditRepository defines the contract for audit event persistence.
+// Audit events are append-only records protected by a hash chain.
+// There is no Delete or Update method — records are immutable.
+type AuditRepository interface {
+	// Create persists a new audit event. The event's PreviousHash and Hash
+	// fields must be set by the caller before calling Create.
+	Create(ctx context.Context, event model.AuditEvent) error
+
+	// List returns all audit events ordered by created_at ASC.
+	// Returns an empty non-nil slice when no events exist.
+	List(ctx context.Context) ([]model.AuditEvent, error)
+
+	// Latest returns the most recent audit event (by created_at DESC).
+	// Returns ErrNotFound if no events exist.
+	Latest(ctx context.Context) (model.AuditEvent, error)
+}
+
 // UserRepository defines the contract for user persistence.
 type UserRepository interface {
 	// Create persists a new user. Returns ErrDuplicateEmail if a user with

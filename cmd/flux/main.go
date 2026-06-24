@@ -131,6 +131,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	prRepo := repository.NewSQLitePullRequestRepository(db)
 	pipelineRepo := repository.NewSQLitePipelineRunRepository(db)
 	userRepo := repository.NewSQLiteUserRepository(db)
+	auditRepo := repository.NewSQLiteAuditRepository(db)
 
 	if err := projectRepo.Migrate(ctx); err != nil {
 		_ = db.Close()
@@ -152,11 +153,16 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("migrate users: %w", err)
 	}
+	if err := auditRepo.Migrate(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("migrate audit events: %w", err)
+	}
 
 	projectSvc := domain.NewProjectService(projectRepo)
 	ticketSvc := domain.NewTicketService(ticketRepo)
 	prSvc := domain.NewPullRequestService(prRepo)
 	pipelineSvc := domain.NewPipelineRunService(pipelineRepo)
+	auditSvc := domain.NewAuditService(auditRepo)
 
 	// Wire soda orchestrator if configured.
 	for _, o := range cfg.Orchestrators {
@@ -203,6 +209,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithPRService(prSvc),
 		api.WithPipelineService(pipelineSvc),
 		api.WithAuthService(authSvc),
+		api.WithAuditService(auditSvc),
 		api.WithSyncService(syncSvc),
 		api.WithAdapters(buildAdapterMap(cfg.Adapters)),
 		api.WithSPA(),

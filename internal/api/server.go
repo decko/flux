@@ -24,6 +24,7 @@ type Server struct {
 	prSvc       *domain.PullRequestService
 	pipelineSvc *domain.PipelineRunService
 	authSvc     *domain.AuthService
+	auditSvc    *domain.AuditService
 	syncSvc     syncService
 	syncMu      sync.Mutex
 	adapters    map[string]domain.AdapterInfo
@@ -97,6 +98,13 @@ func WithAuthService(svc *domain.AuthService) ServerOption {
 func WithSyncService(svc syncService) ServerOption {
 	return func(s *Server) {
 		s.syncSvc = svc
+	}
+}
+
+// WithAuditService injects the audit service for audit log endpoints.
+func WithAuditService(svc *domain.AuditService) ServerOption {
+	return func(s *Server) {
+		s.auditSvc = svc
 	}
 }
 
