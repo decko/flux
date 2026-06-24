@@ -166,6 +166,10 @@ type AuditRepository interface {
 	// Events are ordered by created_at descending (most recent first).
 	// Zero values in the filter are ignored.
 	List(ctx context.Context, filter AuditFilter) ([]model.AuditEvent, error)
+
+	// Latest returns the most recent audit event (by created_at), or nil if
+	// no events exist. Used by the hash chain to link consecutive events.
+	Latest(ctx context.Context) (*model.AuditEvent, error)
 }
 
 // UserRepository defines the contract for user persistence.
