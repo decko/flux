@@ -3,18 +3,21 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
+	"github.com/decko/flux/internal/adapter/github"
 	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/adapter/scm"
 	"github.com/decko/flux/internal/adapter/ticket"
@@ -169,12 +172,28 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	}
 
 	// Build factory for per-project adapters.
+	appAuth, appAuthErr := newAppAuth()
+	if appAuthErr != nil {
+		slog.Warn("github app not configured", "error", appAuthErr)
+	}
 	factory := func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
 		project, err := projectRepo.Get(ctx, projectID)
 		if err != nil {
 			return nil, nil, fmt.Errorf("get project %s: %w", projectID, err)
 		}
 		ghToken := os.Getenv("GITHUB_TOKEN")
+		// Try GitHub App auth first (if installation_id is set).
+		if appAuth != nil && project.InstallationID > 0 {
+			token, err := appAuth.GetToken(ctx, strconv.Itoa(project.InstallationID))
+			if err != nil {
+				return nil, nil, fmt.Errorf("app auth token: %w", err)
+			}
+			slog.Info("using github app auth", "project_id", projectID, "installation_id", project.InstallationID)
+			return ticket.NewGitHubAdapter("", "", token, nil),
+				scm.NewGitHubAdapter("", "", token, nil),
+				nil
+		}
+		// Fallback: adapter config + GITHUB_TOKEN.
 		for _, a := range project.Adapters {
 			if a.Type == "github" {
 				owner := a.Config["owner"]
@@ -188,9 +207,9 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 					nil
 			}
 		}
-		// Fallback: use project's installation_id with GitHub App auth.
+		// Last resort: GITHUB_TOKEN only.
 		if ghToken != "" {
-			slog.Warn("using GITHUB_TOKEN fallback for project", "project_id", projectID)
+			slog.Warn("using GITHUB_TOKEN fallback", "project_id", projectID)
 			return ticket.NewGitHubAdapter("unknown", "unknown", ghToken, nil),
 				scm.NewGitHubAdapter("unknown", "unknown", ghToken, nil),
 				nil
@@ -233,6 +252,21 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	)
 
 	return srv, func() { _ = db.Close() }, nil
+}
+
+// newAppAuth creates a GitHub App authenticator from environment variables.
+// Returns nil if GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY is not set.
+func newAppAuth() (*github.AppAuth, error) {
+	appID := os.Getenv("GITHUB_APP_ID")
+	keyB64 := os.Getenv("GITHUB_APP_PRIVATE_KEY")
+	if appID == "" || keyB64 == "" {
+		return nil, fmt.Errorf("GITHUB_APP_ID or GITHUB_APP_PRIVATE_KEY not set")
+	}
+	keyBytes, err := base64.StdEncoding.DecodeString(keyB64)
+	if err != nil {
+		return nil, fmt.Errorf("decode GITHUB_APP_PRIVATE_KEY: %w", err)
+	}
+	return github.NewAppAuth(appID, string(keyBytes))
 }
 
 // buildAdapterMap converts a slice of config AdapterEntry to a map of
