@@ -10,6 +10,7 @@ import (
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
+	"github.com/decko/flux/pkg/authctx"
 )
 
 // ─── Mock: PullRequestRepository ───────────────────────────────────────────
@@ -283,4 +284,102 @@ func TestPullRequestService_Delete_NotFound(t *testing.T) {
 	if !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
+}
+
+// ─── Audit Integration Tests ─────────────────────────────────────────────────
+
+func TestPullRequestService_Create_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	prRepo := newMockPullRequestRepo()
+	svc := domain.NewPullRequestService(prRepo, domain.WithPullRequestAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	pr := testPullRequest("pr-audit-1", "proj-1", model.PRStatusOpen, model.PRSourceGitHub, "ticket-1")
+	must(t, svc.Create(ctx, pr))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 1 {
+		t.Fatalf("got %d audit events, want 1", len(events))
+	}
+	if events[0].Action != model.AuditAction("pull_request.created") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "pull_request.created")
+	}
+	if events[0].ResourceID != pr.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, pr.ID)
+	}
+	if events[0].ActorID != "test-user" {
+		t.Errorf("ActorID = %q, want %q", events[0].ActorID, "test-user")
+	}
+}
+
+func TestPullRequestService_Update_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	prRepo := newMockPullRequestRepo()
+	svc := domain.NewPullRequestService(prRepo, domain.WithPullRequestAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	pr := testPullRequest("pr-audit-2", "proj-1", model.PRStatusOpen, model.PRSourceGitHub, "ticket-1")
+	must(t, svc.Create(ctx, pr))
+
+	pr.Title = "Updated PR"
+	must(t, svc.Update(ctx, pr))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + update)", len(events))
+	}
+	if events[0].Action != model.AuditAction("pull_request.updated") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "pull_request.updated")
+	}
+	if events[0].ResourceID != pr.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, pr.ID)
+	}
+}
+
+func TestPullRequestService_Delete_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	prRepo := newMockPullRequestRepo()
+	svc := domain.NewPullRequestService(prRepo, domain.WithPullRequestAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	pr := testPullRequest("pr-audit-3", "proj-1", model.PRStatusOpen, model.PRSourceGitHub, "ticket-1")
+	must(t, svc.Create(ctx, pr))
+
+	must(t, svc.Delete(ctx, pr.ID))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + delete)", len(events))
+	}
+	if events[0].Action != model.AuditAction("pull_request.deleted") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "pull_request.deleted")
+	}
+	if events[0].ResourceID != pr.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, pr.ID)
+	}
+}
+
+func TestPullRequestService_AuditNil(t *testing.T) {
+	prRepo := newMockPullRequestRepo()
+	svc := domain.NewPullRequestService(prRepo) // no audit service
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	pr := testPullRequest("pr-noaudit", "proj-1", model.PRStatusOpen, model.PRSourceGitHub, "ticket-1")
+	must(t, svc.Create(ctx, pr))
+
+	got, err := svc.Get(ctx, "pr-noaudit")
+	must(t, err)
+	if got.ID != pr.ID {
+		t.Errorf("got ID %q, want %q", got.ID, pr.ID)
+	}
+
+	pr.Title = "still-no-audit"
+	must(t, svc.Update(ctx, pr))
+	must(t, svc.Delete(ctx, "pr-noaudit"))
 }

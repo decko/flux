@@ -10,6 +10,7 @@ import (
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
+	"github.com/decko/flux/pkg/authctx"
 )
 
 // ─── Mock: TicketRepository ────────────────────────────────────────────────
@@ -284,4 +285,102 @@ func TestTicketService_Delete_NotFound(t *testing.T) {
 	if !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
+}
+
+// ─── Audit Integration Tests ─────────────────────────────────────────────────
+
+func TestTicketService_Create_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	ticketRepo := newMockTicketRepo()
+	svc := domain.NewTicketService(ticketRepo, domain.WithTicketAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	tk := testTicket("ticket-audit-1", "proj-1")
+	must(t, svc.Create(ctx, tk))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 1 {
+		t.Fatalf("got %d audit events, want 1", len(events))
+	}
+	if events[0].Action != model.AuditAction("ticket.created") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "ticket.created")
+	}
+	if events[0].ResourceID != tk.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, tk.ID)
+	}
+	if events[0].ActorID != "test-user" {
+		t.Errorf("ActorID = %q, want %q", events[0].ActorID, "test-user")
+	}
+}
+
+func TestTicketService_Update_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	ticketRepo := newMockTicketRepo()
+	svc := domain.NewTicketService(ticketRepo, domain.WithTicketAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	tk := testTicket("ticket-audit-2", "proj-1")
+	must(t, svc.Create(ctx, tk))
+
+	tk.Title = "Updated"
+	must(t, svc.Update(ctx, tk))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + update)", len(events))
+	}
+	if events[0].Action != model.AuditAction("ticket.updated") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "ticket.updated")
+	}
+	if events[0].ResourceID != tk.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, tk.ID)
+	}
+}
+
+func TestTicketService_Delete_AuditRecorded(t *testing.T) {
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	ticketRepo := newMockTicketRepo()
+	svc := domain.NewTicketService(ticketRepo, domain.WithTicketAuditService(auditSvc))
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	tk := testTicket("ticket-audit-3", "proj-1")
+	must(t, svc.Create(ctx, tk))
+
+	must(t, svc.Delete(ctx, tk.ID))
+
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + delete)", len(events))
+	}
+	if events[0].Action != model.AuditAction("ticket.deleted") {
+		t.Errorf("Action = %q, want %q", events[0].Action, "ticket.deleted")
+	}
+	if events[0].ResourceID != tk.ID {
+		t.Errorf("ResourceID = %q, want %q", events[0].ResourceID, tk.ID)
+	}
+}
+
+func TestTicketService_AuditNil(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	svc := domain.NewTicketService(ticketRepo) // no audit service
+	ctx := authctx.WithUserID(context.Background(), "test-user")
+
+	tk := testTicket("ticket-noaudit", "proj-1")
+	must(t, svc.Create(ctx, tk))
+
+	got, err := svc.Get(ctx, "ticket-noaudit")
+	must(t, err)
+	if got.ID != tk.ID {
+		t.Errorf("got ID %q, want %q", got.ID, tk.ID)
+	}
+
+	tk.Title = "still-no-audit"
+	must(t, svc.Update(ctx, tk))
+	must(t, svc.Delete(ctx, "ticket-noaudit"))
 }

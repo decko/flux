@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/decko/flux/internal/model"
@@ -12,13 +13,29 @@ import (
 // It validates inputs before delegating to the repository and wraps
 // repository errors with additional context.
 type PullRequestService struct {
-	repo repository.PullRequestRepository
+	repo  repository.PullRequestRepository
+	audit *AuditService
+}
+
+// PullRequestServiceOption configures a PullRequestService.
+type PullRequestServiceOption func(*PullRequestService)
+
+// WithPullRequestAuditService sets the audit service for recording pull
+// request events.
+func WithPullRequestAuditService(audit *AuditService) PullRequestServiceOption {
+	return func(s *PullRequestService) {
+		s.audit = audit
+	}
 }
 
 // NewPullRequestService creates a new PullRequestService backed by the given
 // repository.
-func NewPullRequestService(repo repository.PullRequestRepository) *PullRequestService {
-	return &PullRequestService{repo: repo}
+func NewPullRequestService(repo repository.PullRequestRepository, opts ...PullRequestServiceOption) *PullRequestService {
+	s := &PullRequestService{repo: repo}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Create validates the pull request and persists it.
@@ -29,6 +46,11 @@ func (s *PullRequestService) Create(ctx context.Context, pr model.PullRequest) e
 	}
 	if err := s.repo.Create(ctx, pr); err != nil {
 		return fmt.Errorf("create pull request: %w", err)
+	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "pull_request.created", "pull_request", pr.ID, marshalPullRequest(pr)); err != nil {
+			return fmt.Errorf("create pull request: %w", err)
+		}
 	}
 	return nil
 }
@@ -62,6 +84,11 @@ func (s *PullRequestService) Update(ctx context.Context, pr model.PullRequest) e
 	if err := s.repo.Update(ctx, pr); err != nil {
 		return fmt.Errorf("update pull request: %w", err)
 	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "pull_request.updated", "pull_request", pr.ID, marshalPullRequest(pr)); err != nil {
+			return fmt.Errorf("update pull request: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -71,5 +98,20 @@ func (s *PullRequestService) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("delete pull request: %w", err)
 	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "pull_request.deleted", "pull_request", id, ""); err != nil {
+			return fmt.Errorf("delete pull request: %w", err)
+		}
+	}
 	return nil
+}
+
+// marshalPullRequest serializes a pull request to a JSON string.
+// If marshaling fails, it returns an empty string.
+func marshalPullRequest(pr model.PullRequest) string {
+	b, err := json.Marshal(pr)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

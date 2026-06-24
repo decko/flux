@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/decko/flux/internal/model"
@@ -12,12 +13,27 @@ import (
 // It validates inputs before delegating to the repository and wraps
 // repository errors with additional context.
 type ProjectService struct {
-	repo repository.ProjectRepository
+	repo  repository.ProjectRepository
+	audit *AuditService
+}
+
+// ProjectServiceOption configures a ProjectService.
+type ProjectServiceOption func(*ProjectService)
+
+// WithAuditService sets the audit service for recording project events.
+func WithAuditService(audit *AuditService) ProjectServiceOption {
+	return func(s *ProjectService) {
+		s.audit = audit
+	}
 }
 
 // NewProjectService creates a new ProjectService backed by the given repository.
-func NewProjectService(repo repository.ProjectRepository) *ProjectService {
-	return &ProjectService{repo: repo}
+func NewProjectService(repo repository.ProjectRepository, opts ...ProjectServiceOption) *ProjectService {
+	s := &ProjectService{repo: repo}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Create validates the project and persists it.
@@ -28,6 +44,11 @@ func (s *ProjectService) Create(ctx context.Context, p model.Project) error {
 	}
 	if err := s.repo.Create(ctx, p); err != nil {
 		return fmt.Errorf("create project: %w", err)
+	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "project.created", "project", p.ID, marshalProject(p)); err != nil {
+			return fmt.Errorf("create project: %w", err)
+		}
 	}
 	return nil
 }
@@ -61,6 +82,11 @@ func (s *ProjectService) Update(ctx context.Context, p model.Project) error {
 	if err := s.repo.Update(ctx, p); err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "project.updated", "project", p.ID, marshalProject(p)); err != nil {
+			return fmt.Errorf("update project: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -70,5 +96,20 @@ func (s *ProjectService) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("delete project: %w", err)
 	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "project.deleted", "project", id, ""); err != nil {
+			return fmt.Errorf("delete project: %w", err)
+		}
+	}
 	return nil
+}
+
+// marshalProject serializes a project to a JSON string.
+// If marshaling fails, it returns an empty string.
+func marshalProject(p model.Project) string {
+	b, err := json.Marshal(p)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

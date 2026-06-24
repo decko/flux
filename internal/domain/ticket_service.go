@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/decko/flux/internal/model"
@@ -12,12 +13,27 @@ import (
 // It validates inputs before delegating to the repository and wraps
 // repository errors with additional context.
 type TicketService struct {
-	repo repository.TicketRepository
+	repo  repository.TicketRepository
+	audit *AuditService
+}
+
+// TicketServiceOption configures a TicketService.
+type TicketServiceOption func(*TicketService)
+
+// WithTicketAuditService sets the audit service for recording ticket events.
+func WithTicketAuditService(audit *AuditService) TicketServiceOption {
+	return func(s *TicketService) {
+		s.audit = audit
+	}
 }
 
 // NewTicketService creates a new TicketService backed by the given repository.
-func NewTicketService(repo repository.TicketRepository) *TicketService {
-	return &TicketService{repo: repo}
+func NewTicketService(repo repository.TicketRepository, opts ...TicketServiceOption) *TicketService {
+	s := &TicketService{repo: repo}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Create validates the ticket and persists it.
@@ -28,6 +44,11 @@ func (s *TicketService) Create(ctx context.Context, t model.Ticket) error {
 	}
 	if err := s.repo.Create(ctx, t); err != nil {
 		return fmt.Errorf("create ticket: %w", err)
+	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "ticket.created", "ticket", t.ID, marshalTicket(t)); err != nil {
+			return fmt.Errorf("create ticket: %w", err)
+		}
 	}
 	return nil
 }
@@ -61,6 +82,11 @@ func (s *TicketService) Update(ctx context.Context, t model.Ticket) error {
 	if err := s.repo.Update(ctx, t); err != nil {
 		return fmt.Errorf("update ticket: %w", err)
 	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "ticket.updated", "ticket", t.ID, marshalTicket(t)); err != nil {
+			return fmt.Errorf("update ticket: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -70,5 +96,20 @@ func (s *TicketService) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("delete ticket: %w", err)
 	}
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, "ticket.deleted", "ticket", id, ""); err != nil {
+			return fmt.Errorf("delete ticket: %w", err)
+		}
+	}
 	return nil
+}
+
+// marshalTicket serializes a ticket to a JSON string.
+// If marshaling fails, it returns an empty string.
+func marshalTicket(t model.Ticket) string {
+	b, err := json.Marshal(t)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
