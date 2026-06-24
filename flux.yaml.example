@@ -23,10 +23,13 @@ sync:
 
 adapters:
   # GitHub adapter — syncs issues and pull requests.
-  # Token is read from GITHUB_TOKEN environment variable.
+  # Authentication is handled by GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY env vars.
+  # installation_id is the GitHub App installation ID for this repo.
+  # Fallback: if installation_id is 0, uses GITHUB_TOKEN env var instead.
   - type: github
     owner: decko
     repo: flux
+    installation_id: 0  # set to your App installation ID
 
 orchestrators:
   # soda pipeline runner. Path defaults to "soda" (looked up in $PATH).
