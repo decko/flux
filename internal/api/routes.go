@@ -30,7 +30,6 @@ func (s *Server) registerRoutes() {
 			r.Get("/projects", s.handleListProjects)
 			r.Get("/projects/{id}", s.handleGetProject)
 			r.Put("/projects/{id}", s.handleUpdateProject)
-			r.Delete("/projects/{id}", s.handleDeleteProject)
 
 			r.Get("/tickets", s.handleListTickets)
 			r.Get("/tickets/{id}", s.handleGetTicket)
@@ -43,15 +42,21 @@ func (s *Server) registerRoutes() {
 			r.Get("/pipeline-runs", s.handleListPipelineRuns)
 			r.Post("/pipeline-runs", s.handleCreatePipelineRun)
 			r.Get("/pipeline-runs/{id}", s.handleGetPipelineRun)
-			r.Post("/pipeline-runs/{id}/trigger", s.handleTriggerPipelineRun)
-			r.Post("/pipeline-runs/{id}/cancel", s.handleCancelPipelineRun)
 
 			r.Get("/sync/status", s.handleSyncStatus)
 			r.Post("/sync/trigger", s.handleSyncTrigger)
 			r.Get("/adapters", s.handleListAdapters)
 			r.Get("/adapters/{type}/health", s.handleAdapterHealth)
 
-			r.Get("/audit/integrity", s.handleAuditIntegrity)
+			// Admin-only routes.
+			r.Group(func(r chi.Router) {
+				r.Use(RequireRole("admin"))
+				r.Get("/audit-events", s.handleAuditEvents)
+				r.Get("/audit/integrity", s.handleAuditIntegrity)
+				r.Delete("/projects/{id}", s.handleDeleteProject)
+				r.Post("/pipeline-runs/{id}/trigger", s.handleTriggerPipelineRun)
+				r.Post("/pipeline-runs/{id}/cancel", s.handleCancelPipelineRun)
+			})
 		})
 	})
 

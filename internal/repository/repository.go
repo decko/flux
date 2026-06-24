@@ -12,6 +12,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/decko/flux/internal/model"
 )
@@ -141,21 +142,34 @@ type PipelineRunRepository interface {
 	Update(ctx context.Context, run model.PipelineRun) error
 }
 
+// AuditFilter defines criteria for listing audit events.
+// Zero values are ignored; only non-zero fields are used for filtering.
+type AuditFilter struct {
+	ActorID      string
+	ResourceType string
+	ResourceID   string
+	Action       string
+	Since        time.Time
+	Until        time.Time
+	Limit        int
+	Offset       int
+}
+
 // AuditRepository defines the contract for audit event persistence.
-// Audit events are append-only records protected by a hash chain.
-// There is no Delete or Update method — records are immutable.
+// Audit records are append-only — there are no Update or Delete operations.
 type AuditRepository interface {
-	// Create persists a new audit event. The event's PreviousHash and Hash
-	// fields must be set by the caller before calling Create.
-	Create(ctx context.Context, event model.AuditEvent) error
+	// Insert persists a new audit event. If the event's ID is empty, a UUID
+	// is generated automatically.
+	Insert(ctx context.Context, event model.AuditEvent) error
 
-	// List returns all audit events ordered by created_at ASC.
-	// Returns an empty non-nil slice when no events exist.
-	List(ctx context.Context) ([]model.AuditEvent, error)
+	// List returns audit events matching the given filter criteria.
+	// Events are ordered by created_at descending (most recent first).
+	// Zero values in the filter are ignored.
+	List(ctx context.Context, filter AuditFilter) ([]model.AuditEvent, error)
 
-	// Latest returns the most recent audit event (by created_at DESC).
+	// Latest returns the most recent audit event by created_at DESC LIMIT 1.
 	// Returns ErrNotFound if no events exist.
-	Latest(ctx context.Context) (model.AuditEvent, error)
+	Latest(ctx context.Context) (*model.AuditEvent, error)
 }
 
 // UserRepository defines the contract for user persistence.

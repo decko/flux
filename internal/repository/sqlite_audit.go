@@ -5,19 +5,29 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/decko/flux/internal/model"
 )
 
 // SQLiteAuditRepository implements AuditRepository using a SQLite database.
-// Audit events are append-only — there is no Delete or Update method.
+// Audit events are append-only immutable records stored in the audit_events
+// table with indexes on actor_id, resource, and created_at for efficient
+// filtering and ordering.
 type SQLiteAuditRepository struct {
 	db *sql.DB
 }
 
-// NewSQLiteAuditRepository creates a new SQLiteAuditRepository backed by the
-// given *sql.DB connection. The caller is responsible for configuring the
-// *sql.DB via ConfigureSQLiteDB before calling this constructor.
+// NewSQLiteAuditRepository creates a new SQLiteAuditRepository backed by
+// the given *sql.DB connection.
+//
+// The caller is responsible for configuring the *sql.DB via ConfigureSQLiteDB
+// before calling this constructor. NewSQLiteAuditRepository does not mutate
+// the connection pool — it only holds a reference to the already-configured
+// database handle.
 //
 // The caller must also ensure the "sqlite3" driver is imported:
 //
@@ -26,14 +36,8 @@ func NewSQLiteAuditRepository(db *sql.DB) *SQLiteAuditRepository {
 	return &SQLiteAuditRepository{db: db}
 }
 
-// DB returns the underlying *sql.DB for direct SQL access (e.g., testing).
-func (r *SQLiteAuditRepository) DB() *sql.DB {
-	return r.db
-}
-
-// Migrate creates the audit_events table if it does not already exist.
-// The table stores the hash chain fields (previous_hash, hash) alongside
-// the event payload for tamper detection.
+// Migrate creates the audit_events table and associated indexes if they do not
+// already exist. Safe to call multiple times.
 func (r *SQLiteAuditRepository) Migrate(ctx context.Context) error {
 	query := `CREATE TABLE IF NOT EXISTS audit_events (
 		id TEXT PRIMARY KEY,
@@ -41,21 +45,29 @@ func (r *SQLiteAuditRepository) Migrate(ctx context.Context) error {
 		action TEXT NOT NULL,
 		resource_type TEXT NOT NULL,
 		resource_id TEXT NOT NULL,
-		metadata TEXT NOT NULL DEFAULT '',
+		metadata TEXT NOT NULL DEFAULT '{}',
 		previous_hash TEXT NOT NULL DEFAULT '',
 		hash TEXT NOT NULL DEFAULT '',
-		created_at DATETIME NOT NULL
-	)`
+		created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_events(actor_id);
+	CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_events(resource_type, resource_id);
+	CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at);`
 	if _, err := r.db.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("creating audit_events table: %w", err)
 	}
 	return nil
 }
 
-// Create persists a new audit event. The event's id, created_at, previous_hash,
-// and hash fields must be populated by the caller. time.Time values are
-// normalized to UTC before storage.
-func (r *SQLiteAuditRepository) Create(ctx context.Context, event model.AuditEvent) error {
+// Insert persists a new audit event. If the event's ID is empty, a UUID is
+// generated automatically. If CreatedAt is zero, the current UTC time is used.
+func (r *SQLiteAuditRepository) Insert(ctx context.Context, event model.AuditEvent) error {
+	if event.ID == "" {
+		event.ID = uuid.New().String()
+	}
+	if event.CreatedAt.IsZero() {
+		event.CreatedAt = time.Now().UTC()
+	}
 	query := `INSERT INTO audit_events (id, actor_id, action, resource_type, resource_id, metadata, previous_hash, hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := r.db.ExecContext(ctx, query,
 		event.ID,
@@ -69,43 +81,59 @@ func (r *SQLiteAuditRepository) Create(ctx context.Context, event model.AuditEve
 		event.CreatedAt.UTC(),
 	)
 	if err != nil {
-		return fmt.Errorf("creating audit event: %w", err)
+		return fmt.Errorf("inserting audit event: %w", err)
 	}
 	return nil
 }
 
-// Latest returns the most recent audit event ordered by created_at DESC.
-// Returns ErrNotFound if no events exist.
-func (r *SQLiteAuditRepository) Latest(ctx context.Context) (model.AuditEvent, error) {
-	query := `SELECT id, actor_id, action, resource_type, resource_id, metadata, previous_hash, hash, created_at FROM audit_events ORDER BY created_at DESC LIMIT 1`
-	row := r.db.QueryRowContext(ctx, query)
+// List returns audit events matching the given filter criteria. Events are
+// ordered by created_at descending (most recent first). Zero values in the
+// filter are ignored. Returns an empty non-nil slice when no events match.
+func (r *SQLiteAuditRepository) List(ctx context.Context, filter AuditFilter) ([]model.AuditEvent, error) {
+	var where []string
+	var args []any
 
-	var event model.AuditEvent
-	err := row.Scan(
-		&event.ID,
-		&event.ActorID,
-		&event.Action,
-		&event.ResourceType,
-		&event.ResourceID,
-		&event.Metadata,
-		&event.PreviousHash,
-		&event.Hash,
-		&event.CreatedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return model.AuditEvent{}, ErrNotFound
+	if filter.ActorID != "" {
+		where = append(where, "actor_id = ?")
+		args = append(args, filter.ActorID)
 	}
-	if err != nil {
-		return model.AuditEvent{}, fmt.Errorf("getting latest audit event: %w", err)
+	if filter.ResourceType != "" {
+		where = append(where, "resource_type = ?")
+		args = append(args, filter.ResourceType)
 	}
-	return event, nil
-}
+	if filter.ResourceID != "" {
+		where = append(where, "resource_id = ?")
+		args = append(args, filter.ResourceID)
+	}
+	if filter.Action != "" {
+		where = append(where, "action = ?")
+		args = append(args, filter.Action)
+	}
+	if !filter.Since.IsZero() {
+		where = append(where, "created_at >= ?")
+		args = append(args, filter.Since.UTC())
+	}
+	if !filter.Until.IsZero() {
+		where = append(where, "created_at <= ?")
+		args = append(args, filter.Until.UTC())
+	}
 
-// List returns all audit events ordered by created_at ASC.
-// Returns an empty non-nil slice when no events exist.
-func (r *SQLiteAuditRepository) List(ctx context.Context) ([]model.AuditEvent, error) {
-	query := `SELECT id, actor_id, action, resource_type, resource_id, metadata, previous_hash, hash, created_at FROM audit_events ORDER BY created_at ASC`
-	rows, err := r.db.QueryContext(ctx, query)
+	query := "SELECT id, actor_id, action, resource_type, resource_id, metadata, previous_hash, hash, created_at FROM audit_events"
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY created_at DESC"
+
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
+	}
+	if filter.Offset > 0 {
+		query += " OFFSET ?"
+		args = append(args, filter.Offset)
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing audit events: %w", err)
 	}
@@ -136,5 +164,29 @@ func (r *SQLiteAuditRepository) List(ctx context.Context) ([]model.AuditEvent, e
 	return events, nil
 }
 
-// Ensure interface compliance.
-var _ AuditRepository = (*SQLiteAuditRepository)(nil)
+// Latest returns the most recent audit event ordered by created_at DESC.
+// Returns ErrNotFound if no events exist.
+func (r *SQLiteAuditRepository) Latest(ctx context.Context) (*model.AuditEvent, error) {
+	query := `SELECT id, actor_id, action, resource_type, resource_id, metadata, previous_hash, hash, created_at FROM audit_events ORDER BY created_at DESC LIMIT 1`
+	row := r.db.QueryRowContext(ctx, query)
+
+	var event model.AuditEvent
+	err := row.Scan(
+		&event.ID,
+		&event.ActorID,
+		&event.Action,
+		&event.ResourceType,
+		&event.ResourceID,
+		&event.Metadata,
+		&event.PreviousHash,
+		&event.Hash,
+		&event.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting latest audit event: %w", err)
+	}
+	return &event, nil
+}
