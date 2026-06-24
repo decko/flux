@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
@@ -38,7 +39,8 @@ func setupPRServer(t *testing.T) (*Server, func(t *testing.T, pr model.PullReque
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLitePullRequestRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLitePullRequestRepository(sdb)
 
 	svc := domain.NewPullRequestService(repo)
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPRService(svc))

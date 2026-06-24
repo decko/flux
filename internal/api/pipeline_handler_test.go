@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/adapter/orchestrator"
@@ -40,7 +41,8 @@ func setupPipelineServer(t *testing.T) (*Server, func(t *testing.T, run model.Pi
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLitePipelineRunRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLitePipelineRunRepository(sdb)
 	svc := domain.NewPipelineRunService(repo)
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPipelineService(svc))
 
@@ -119,7 +121,8 @@ func setupPipelineServerWithOrch(t *testing.T, orch orchestrator.OrchestratorAda
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLitePipelineRunRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLitePipelineRunRepository(sdb)
 	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithPipelineService(svc))
 

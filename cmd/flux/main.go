@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/adapter/orchestrator"
@@ -133,12 +134,14 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		return nil, nil, fmt.Errorf("run migrations: %w", err)
 	}
 
-	projectRepo := repository.NewSQLiteProjectRepository(db)
-	ticketRepo := repository.NewSQLiteTicketRepository(db)
-	prRepo := repository.NewSQLitePullRequestRepository(db)
-	pipelineRepo := repository.NewSQLitePipelineRunRepository(db)
-	userRepo := repository.NewSQLiteUserRepository(db)
-	auditRepo := repository.NewSQLiteAuditRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+
+	projectRepo := repository.NewSQLiteProjectRepository(sdb)
+	ticketRepo := repository.NewSQLiteTicketRepository(sdb)
+	prRepo := repository.NewSQLitePullRequestRepository(sdb)
+	pipelineRepo := repository.NewSQLitePipelineRunRepository(sdb)
+	userRepo := repository.NewSQLiteUserRepository(sdb)
+	auditRepo := repository.NewSQLiteAuditRepository(sdb)
 	auditSvc := domain.NewAuditService(auditRepo)
 
 	projectSvc := domain.NewProjectService(projectRepo)

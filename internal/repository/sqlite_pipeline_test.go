@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/migration"
@@ -19,7 +20,7 @@ import (
 // setupPipelineTestDB opens an in-memory SQLite database, configures it for
 // SQLite use (pool + WAL), creates the pipeline_runs table via migration, and
 // returns a SQLitePipelineRunRepository for testing.
-func setupPipelineTestDB(t *testing.T) (*sql.DB, *repository.SQLitePipelineRunRepository) {
+func setupPipelineTestDB(t *testing.T) (*sqlx.DB, *repository.SQLitePipelineRunRepository) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", ":memory:")
@@ -37,8 +38,9 @@ func setupPipelineTestDB(t *testing.T) (*sql.DB, *repository.SQLitePipelineRunRe
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLitePipelineRunRepository(db)
-	return db, repo
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLitePipelineRunRepository(sdb)
+	return sdb, repo
 }
 
 // ─── Create ────────────────────────────────────────────────────────────────

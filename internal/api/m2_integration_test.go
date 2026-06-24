@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/adapter/scm"
@@ -234,8 +235,9 @@ func TestM2FullPipeline_EndToEndSync(t *testing.T) {
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	ticketRepo := repository.NewSQLiteTicketRepository(db)
-	prRepo := repository.NewSQLitePullRequestRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	ticketRepo := repository.NewSQLiteTicketRepository(sdb)
+	prRepo := repository.NewSQLitePullRequestRepository(sdb)
 
 	// 3. Create real GitHub adapters pointed at the mock server.
 	ticketAdapter := ticket.NewGitHubAdapter("test", "flux", "test-github-token", nil,

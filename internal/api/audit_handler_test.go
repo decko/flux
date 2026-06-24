@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
@@ -36,7 +37,8 @@ func setupAuditServer(t *testing.T) *Server {
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLiteAuditRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLiteAuditRepository(sdb)
 	svc := domain.NewAuditService(repo)
 	return NewServer(WithJWTSecret(testJWTSecretBytes), WithAuditService(svc))
 }
@@ -130,7 +132,8 @@ func TestHandleAuditEvents(t *testing.T) {
 		if err := migration.Up(db); err != nil {
 			t.Fatalf("migrate: %v", err)
 		}
-		repo := repository.NewSQLiteAuditRepository(db)
+		sdb := sqlx.NewDb(db, "sqlite")
+		repo := repository.NewSQLiteAuditRepository(sdb)
 		seedAuditEvents(t, repo)
 
 		svc := domain.NewAuditService(repo)
@@ -182,7 +185,8 @@ func TestHandleAuditEvents_FilterByResource(t *testing.T) {
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLiteAuditRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLiteAuditRepository(sdb)
 	seedAuditEvents(t, repo)
 
 	svc := domain.NewAuditService(repo)
