@@ -14,7 +14,7 @@ import (
 // syncService defines the interface for sync operations used by HTTP handlers.
 type syncService interface {
 	Status() domain.SyncStatus
-	SyncNow(ctx context.Context, projectID string) error
+	SyncNow(ctx context.Context) error
 }
 
 // syncStatusResponse is the JSON body for GET /api/v1/sync/status.
@@ -61,7 +61,7 @@ func (s *Server) handleSyncTrigger(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget sync. Runs in background to avoid blocking the request.
 	go func() {
 		defer s.syncMu.Unlock()
-		_ = s.syncSvc.SyncNow(context.Background(), "")
+		_ = s.syncSvc.SyncNow(context.Background())
 	}()
 
 	w.WriteHeader(http.StatusAccepted)

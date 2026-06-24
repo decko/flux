@@ -19,6 +19,7 @@ import (
 	"github.com/decko/flux/internal/adapter/ticket"
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/migration"
+	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
 
@@ -239,14 +240,27 @@ func TestM2FullPipeline_EndToEndSync(t *testing.T) {
 	ticketRepo := repository.NewSQLiteTicketRepository(sdb)
 	prRepo := repository.NewSQLitePullRequestRepository(sdb)
 
-	// 3. Create real GitHub adapters pointed at the mock server.
+	// 3. Create project repository and seed a project.
+	projectRepo := repository.NewSQLiteProjectRepository(sdb)
+	_ = projectRepo.Create(t.Context(), model.Project{
+		ID:   "flux",
+		Name: "Flux",
+	})
+
+	// 4. Create real GitHub adapters pointed at the mock server.
 	ticketAdapter := ticket.NewGitHubAdapter("test", "flux", "test-github-token", nil,
 		ticket.WithBaseURL(gh.URL))
 	scmAdapter := scm.NewGitHubAdapter("test", "flux", "test-github-token", nil,
 		scm.WithBaseURL(gh.URL))
 
-	// 4. Create the sync service.
-	syncSvc := domain.NewSyncService(ticketRepo, prRepo, ticketAdapter, scmAdapter, time.Hour)
+	// 5. Create the sync service with a factory that returns per-project adapters.
+	factory := domain.AdapterFactory(func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+		if projectID == "flux" {
+			return ticketAdapter, scmAdapter, nil
+		}
+		return nil, nil, fmt.Errorf("unknown project: %s", projectID)
+	})
+	syncSvc := domain.NewSyncService(ticketRepo, prRepo, projectRepo, factory, time.Hour)
 
 	// 5. Create the API server with all M2 wiring.
 	adapters := map[string]domain.AdapterInfo{
@@ -259,7 +273,7 @@ func TestM2FullPipeline_EndToEndSync(t *testing.T) {
 	)
 
 	// 6. Run a sync.
-	syncErr := syncSvc.SyncNow(t.Context(), "")
+	syncErr := syncSvc.SyncNow(t.Context())
 	if syncErr != nil {
 		t.Fatalf("SyncNow failed: %v", syncErr)
 	}
@@ -369,7 +383,7 @@ func TestM2FullPipeline_EndToEndSync(t *testing.T) {
 	}
 
 	// 10. Trigger another sync — should dedup (upsert, not duplicate).
-	err = syncSvc.SyncNow(t.Context(), "")
+	err = syncSvc.SyncNow(t.Context())
 	if err != nil {
 		t.Fatalf("second SyncNow failed: %v", err)
 	}

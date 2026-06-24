@@ -31,7 +31,7 @@ func (s *mockSyncService) Status() domain.SyncStatus {
 	}
 }
 
-func (s *mockSyncService) SyncNow(_ context.Context, _ string) error {
+func (s *mockSyncService) SyncNow(_ context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now().UTC()
