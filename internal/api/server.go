@@ -23,6 +23,7 @@ type Server struct {
 	ticketSvc   *domain.TicketService
 	prSvc       *domain.PullRequestService
 	pipelineSvc *domain.PipelineRunService
+	auditSvc    *domain.AuditService
 	authSvc     *domain.AuthService
 	syncSvc     syncService
 	syncMu      sync.Mutex
@@ -83,6 +84,13 @@ func WithPRService(svc *domain.PullRequestService) ServerOption {
 func WithPipelineService(svc *domain.PipelineRunService) ServerOption {
 	return func(s *Server) {
 		s.pipelineSvc = svc
+	}
+}
+
+// WithAuditService injects the audit service for audit event listing endpoints.
+func WithAuditService(svc *domain.AuditService) ServerOption {
+	return func(s *Server) {
+		s.auditSvc = svc
 	}
 }
 
