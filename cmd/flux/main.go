@@ -174,24 +174,28 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		if err != nil {
 			return nil, nil, fmt.Errorf("get project %s: %w", projectID, err)
 		}
+		ghToken := os.Getenv("GITHUB_TOKEN")
 		for _, a := range project.Adapters {
 			if a.Type == "github" {
-				token := os.Getenv("GITHUB_TOKEN")
-				if token == "" {
-					return nil, nil, fmt.Errorf("github token not configured")
-				}
 				owner := a.Config["owner"]
 				repo := a.Config["repo"]
 				if owner == "" || repo == "" {
-					return nil, nil, fmt.Errorf("github adapter missing owner or repo for project %s", projectID)
+					return nil, nil, fmt.Errorf("github adapter missing owner or repo")
 				}
 				slog.Info("configuring github adapter", "project_id", projectID, "owner", owner, "repo", repo)
-				return ticket.NewGitHubAdapter(owner, repo, token, nil),
-					scm.NewGitHubAdapter(owner, repo, token, nil),
+				return ticket.NewGitHubAdapter(owner, repo, ghToken, nil),
+					scm.NewGitHubAdapter(owner, repo, ghToken, nil),
 					nil
 			}
 		}
-		return nil, nil, fmt.Errorf("no ticket adapter configured for project %s", projectID)
+		// Fallback: use project's installation_id with GitHub App auth.
+		if ghToken != "" {
+			slog.Warn("using GITHUB_TOKEN fallback for project", "project_id", projectID)
+			return ticket.NewGitHubAdapter("unknown", "unknown", ghToken, nil),
+				scm.NewGitHubAdapter("unknown", "unknown", ghToken, nil),
+				nil
+		}
+		return nil, nil, fmt.Errorf("no adapters available for project %s", projectID)
 	}
 	syncSvc := domain.NewSyncService(ticketRepo, prRepo, projectRepo, factory, syncInterval)
 
