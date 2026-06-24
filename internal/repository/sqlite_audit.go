@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/decko/flux/internal/model"
 )
@@ -18,21 +19,15 @@ import (
 // table with indexes on actor_id, resource, and created_at for efficient
 // filtering and ordering.
 type SQLiteAuditRepository struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
 // NewSQLiteAuditRepository creates a new SQLiteAuditRepository backed by
-// the given *sql.DB connection.
+// the given *sqlx.DB connection.
 //
-// The caller is responsible for configuring the *sql.DB via ConfigureSQLiteDB
-// before calling this constructor. NewSQLiteAuditRepository does not mutate
-// the connection pool — it only holds a reference to the already-configured
-// database handle.
-//
-// The caller must also ensure the "sqlite3" driver is imported:
-//
-//	import _ "modernc.org/sqlite"
-func NewSQLiteAuditRepository(db *sql.DB) *SQLiteAuditRepository {
+// The caller is responsible for configuring the underlying *sql.DB via
+// ConfigureSQLiteDB before wrapping it with sqlx.NewDb.
+func NewSQLiteAuditRepository(db *sqlx.DB) *SQLiteAuditRepository {
 	return &SQLiteAuditRepository{db: db}
 }
 

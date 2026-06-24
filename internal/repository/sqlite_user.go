@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/decko/flux/internal/model"
 )
 
@@ -14,19 +16,15 @@ import (
 // The users table stores user credentials and metadata. Email addresses
 // have a UNIQUE constraint to prevent duplicates.
 type SQLiteUserRepository struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
 // NewSQLiteUserRepository creates a new SQLiteUserRepository backed by
-// the given *sql.DB connection.
+// the given *sqlx.DB connection.
 //
-// The caller is responsible for configuring the *sql.DB via ConfigureSQLiteDB
-// before calling this constructor.
-//
-// The caller must also ensure the "sqlite3" driver is imported:
-//
-//	import _ "modernc.org/sqlite"
-func NewSQLiteUserRepository(db *sql.DB) *SQLiteUserRepository {
+// The caller is responsible for configuring the underlying *sql.DB via
+// ConfigureSQLiteDB before wrapping it with sqlx.NewDb.
+func NewSQLiteUserRepository(db *sqlx.DB) *SQLiteUserRepository {
 	return &SQLiteUserRepository{db: db}
 }
 

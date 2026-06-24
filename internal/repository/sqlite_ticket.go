@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/decko/flux/internal/model"
 )
 
@@ -20,21 +22,15 @@ import (
 // wrappers (e.g., CreateBatch) will be added to the TicketRepository
 // interface with a separate issue.
 type SQLiteTicketRepository struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
 // NewSQLiteTicketRepository creates a new SQLiteTicketRepository backed by
-// the given *sql.DB connection.
+// the given *sqlx.DB connection.
 //
-// The caller is responsible for configuring the *sql.DB via ConfigureSQLiteDB
-// before calling this constructor. NewSQLiteTicketRepository does not mutate
-// the connection pool — it only holds a reference to the already-configured
-// database handle.
-//
-// The caller must also ensure the "sqlite3" driver is imported:
-//
-//	import _ "modernc.org/sqlite"
-func NewSQLiteTicketRepository(db *sql.DB) *SQLiteTicketRepository {
+// The caller is responsible for configuring the underlying *sql.DB via
+// ConfigureSQLiteDB before wrapping it with sqlx.NewDb.
+func NewSQLiteTicketRepository(db *sqlx.DB) *SQLiteTicketRepository {
 	return &SQLiteTicketRepository{db: db}
 }
 

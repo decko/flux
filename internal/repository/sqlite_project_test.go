@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/migration"
@@ -19,7 +20,7 @@ import (
 // setupTestDB opens an in-memory SQLite database, configures it for SQLite
 // use (pool + WAL), creates the projects table via migration, and returns a
 // SQLiteProjectRepository for testing.
-func setupTestDB(t *testing.T) (*sql.DB, *repository.SQLiteProjectRepository) {
+func setupTestDB(t *testing.T) (*sqlx.DB, *repository.SQLiteProjectRepository) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", ":memory:")
@@ -37,8 +38,9 @@ func setupTestDB(t *testing.T) (*sql.DB, *repository.SQLiteProjectRepository) {
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLiteProjectRepository(db)
-	return db, repo
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLiteProjectRepository(sdb)
+	return sdb, repo
 }
 
 // ─── Create ────────────────────────────────────────────────────────────────

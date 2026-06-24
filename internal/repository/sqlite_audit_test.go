@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/migration"
@@ -13,9 +14,9 @@ import (
 )
 
 // setupAuditTestDB creates an in-memory SQLite database, configures it,
-// and runs the audit migration. Returns both the repo and the raw *sql.DB
+// and runs the audit migration. Returns both the repo and the raw *sqlx.DB
 // for seeding test data directly.
-func setupAuditTestDB(t *testing.T) (*repository.SQLiteAuditRepository, *sql.DB) {
+func setupAuditTestDB(t *testing.T) (*repository.SQLiteAuditRepository, *sqlx.DB) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", ":memory:")
@@ -31,12 +32,13 @@ func setupAuditTestDB(t *testing.T) (*repository.SQLiteAuditRepository, *sql.DB)
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLiteAuditRepository(db)
-	return repo, db
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLiteAuditRepository(sdb)
+	return repo, sdb
 }
 
 // insertAuditEvent inserts a raw row into the audit_events table for testing.
-func insertAuditEvent(t *testing.T, db *sql.DB, id, actorID, action, resourceType, resourceID string, createdAt time.Time) {
+func insertAuditEvent(t *testing.T, db *sqlx.DB, id, actorID, action, resourceType, resourceID string, createdAt time.Time) {
 	t.Helper()
 
 	_, err := db.ExecContext(context.Background(),

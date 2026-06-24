@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
@@ -36,7 +37,8 @@ func setupProjectServer(t *testing.T) *Server {
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLiteProjectRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLiteProjectRepository(sdb)
 
 	svc := domain.NewProjectService(repo)
 	return NewServer(WithJWTSecret(testJWTSecretBytes), WithProjectService(svc))

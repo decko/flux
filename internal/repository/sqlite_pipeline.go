@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/decko/flux/internal/model"
 )
 
@@ -17,21 +19,15 @@ import (
 //
 // Pipeline runs are immutable audit records — there is no Delete method.
 type SQLitePipelineRunRepository struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
 // NewSQLitePipelineRunRepository creates a new SQLitePipelineRunRepository
-// backed by the given *sql.DB connection.
+// backed by the given *sqlx.DB connection.
 //
-// The caller is responsible for configuring the *sql.DB via ConfigureSQLiteDB
-// before calling this constructor. NewSQLitePipelineRunRepository does not
-// mutate the connection pool — it only holds a reference to the
-// already-configured database handle.
-//
-// The caller must also ensure the "sqlite3" driver is imported:
-//
-//	import _ "modernc.org/sqlite"
-func NewSQLitePipelineRunRepository(db *sql.DB) *SQLitePipelineRunRepository {
+// The caller is responsible for configuring the underlying *sql.DB via
+// ConfigureSQLiteDB before wrapping it with sqlx.NewDb.
+func NewSQLitePipelineRunRepository(db *sqlx.DB) *SQLitePipelineRunRepository {
 	return &SQLitePipelineRunRepository{db: db}
 }
 

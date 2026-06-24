@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/migration"
@@ -30,7 +31,8 @@ func setupUserTestDB(t *testing.T) *repository.SQLiteUserRepository {
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLiteUserRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLiteUserRepository(sdb)
 	return repo
 }
 

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
@@ -77,7 +78,8 @@ func TestAPIV1RoutesExist(t *testing.T) {
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLiteProjectRepository(db)
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLiteProjectRepository(sdb)
 	svc := domain.NewProjectService(repo)
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithProjectService(svc))
 	ts := httptest.NewServer(srv)

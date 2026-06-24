@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/migration"
@@ -19,7 +20,7 @@ import (
 // setupTicketTestDB opens an in-memory SQLite database, configures it for
 // SQLite use (pool + WAL), creates the tickets table via migration, and
 // returns a SQLiteTicketRepository for testing.
-func setupTicketTestDB(t *testing.T) (*sql.DB, *repository.SQLiteTicketRepository) {
+func setupTicketTestDB(t *testing.T) (*sqlx.DB, *repository.SQLiteTicketRepository) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", ":memory:")
@@ -37,8 +38,9 @@ func setupTicketTestDB(t *testing.T) (*sql.DB, *repository.SQLiteTicketRepositor
 	if err := migration.Up(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	repo := repository.NewSQLiteTicketRepository(db)
-	return db, repo
+	sdb := sqlx.NewDb(db, "sqlite")
+	repo := repository.NewSQLiteTicketRepository(sdb)
+	return sdb, repo
 }
 
 // ─── Create ────────────────────────────────────────────────────────────────
