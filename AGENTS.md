@@ -139,6 +139,8 @@ Do NOT proceed to PR creation until reviewer agent signs off.
 - [ ] All public types/functions have godoc comments
 - [ ] Architecture doc updated if needed
 - [ ] No security issues (secrets, unsafe patterns)
+- [ ] **Functional test added** — if the issue touches API handlers or domain services, at least one integration test exercising the new endpoint/service through its public interface (not just unit tests with mocks)
+- [ ] **Milestone smoke test updated** — if this issue completes a milestone or adds a cross-package feature, extend `internal/api/m2_integration_test.go` (or create equivalent for the milestone)
 
 ### Reviewer Handoff Format
 
@@ -233,7 +235,7 @@ If no GitHub issue exists, create one first:
 ```bash
 gh issue create \
   --title "<title>" \
-  --body "## Context\n\n## Acceptance Criteria\n\n## DoD Checklist\n- [ ] go build\n- [ ] go test -race\n- [ ] golangci-lint\n- [ ] gofmt\n- [ ] npm typecheck\n- [ ] npm lint\n- [ ] npm test\n- [ ] TDD followed\n- [ ] Documentation complete\n- [ ] DoD review passed"
+  --body "## Context\n\n## Acceptance Criteria\n- [ ] Functional test covering the API/domain boundary (not just unit tests)\n- [ ] Tests written before implementation (TDD)\n\n## DoD Checklist\n- [ ] go build\n- [ ] go test -race\n- [ ] golangci-lint\n- [ ] gofmt\n- [ ] npm typecheck\n- [ ] npm lint\n- [ ] npm test\n- [ ] TDD followed\n- [ ] Functional test added\n- [ ] Documentation complete\n- [ ] DoD review passed"
 ```
 
 Then assign it before writing any code.
@@ -253,6 +255,44 @@ Then assign it before writing any code.
 10. Fix any review findings
 11. Create PR after reviewer approval
 12. After merge → clean up worktree and branch
+```
+
+## Milestone Smoke Tests
+
+Every milestone **must have** a smoke test that verifies the milestone's features work end-to-end across package boundaries. Unit tests cover individual pieces; smoke tests catch wiring bugs.
+
+### When to write
+
+- **During the milestone**: Extend the smoke test file as each issue that touches the API/domain boundary is merged. This ensures the test exists before the milestone is "done."
+- **At milestone end**: Run the full smoke test as the final gate. The `feature-intake` agent validates it exists before declaring the milestone complete.
+
+### Location and pattern
+
+```
+internal/api/<milestone>_integration_test.go
+```
+
+Example for M2: `internal/api/m2_integration_test.go` — sets up mock GitHub server → real adapters → sync service → repos → API endpoints → asserts counts, statuses, and auth.
+
+### Minimum coverage
+
+A milestone smoke test must exercise at least:
+- One write operation (create/update/delete)
+- One read operation (list/get with filters)
+- One auth check (unauthenticated request returns 401)
+- Cross-package wiring (e.g., adapter → service → repository → API response)
+
+### Example (M6 smoke test)
+
+```go
+func TestM6_TrustworthyAudit(t *testing.T) {
+    // 1. Register user → get token
+    // 2. Create project (with auth) → verify 201
+    // 3. Trigger sync (with auth) → verify 202
+    // 4. GET /audit-events → verify events exist with actor_id matching user
+    // 5. GET /audit-events without auth → verify 401
+    // 6. GET /audit-events as non-admin → verify 403
+}
 ```
 
 ## Resuming After Interruption
