@@ -153,6 +153,13 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		return nil, nil, fmt.Errorf("migrate users: %w", err)
 	}
 
+	auditRepo := repository.NewSQLiteAuditRepository(db)
+	if err := auditRepo.Migrate(ctx); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("migrate audit events: %w", err)
+	}
+	auditSvc := domain.NewAuditService(auditRepo)
+
 	projectSvc := domain.NewProjectService(projectRepo)
 	ticketSvc := domain.NewTicketService(ticketRepo)
 	prSvc := domain.NewPullRequestService(prRepo)
@@ -195,6 +202,22 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	// Start background sync loop.
 	go syncSvc.Run(ctx)
 
+	// Start periodic audit cleanup goroutine.
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := auditSvc.PurgeOldEvents(ctx, cfg.Audit.RetentionDays); err != nil {
+					slog.Error("audit cleanup", "error", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
 		api.WithJWTSecret(jwtSecret),
@@ -205,6 +228,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithAuthService(authSvc),
 		api.WithSyncService(syncSvc),
 		api.WithAdapters(buildAdapterMap(cfg.Adapters)),
+		api.WithAuditService(auditSvc),
 		api.WithSPA(),
 	)
 

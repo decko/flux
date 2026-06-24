@@ -41,6 +41,11 @@ type AdapterEntry struct {
 	Repo  string `yaml:"repo"`  // repository name
 }
 
+// AuditConfig holds retention policy settings for audit log cleanup.
+type AuditConfig struct {
+	RetentionDays int `yaml:"retention_days"`
+}
+
 // SyncConfig holds periodic sync settings.
 type SyncConfig struct {
 	Interval string `yaml:"interval"` // duration string, e.g. "5m", "30s"
@@ -68,6 +73,7 @@ type Config struct {
 	Adapters      []AdapterEntry      `yaml:"adapters"`
 	Sync          SyncConfig          `yaml:"sync"`
 	Orchestrators []OrchestratorEntry `yaml:"orchestrators"`
+	Audit         AuditConfig         `yaml:"audit"`
 }
 
 // Load reads configuration from a YAML file at path, applies defaults for zero-valued
@@ -106,6 +112,11 @@ func Load(path string) (*Config, error) {
 	// Default sync interval
 	if cfg.Sync.Interval == "" {
 		cfg.Sync.Interval = "5m"
+	}
+
+	// Default audit retention to 90 days
+	if cfg.Audit.RetentionDays == 0 {
+		cfg.Audit.RetentionDays = 90
 	}
 	// Ensure Adapters is never nil
 	if cfg.Adapters == nil {

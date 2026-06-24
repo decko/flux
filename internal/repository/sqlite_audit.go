@@ -156,3 +156,19 @@ func (r *SQLiteAuditRepository) List(ctx context.Context, filter AuditFilter) ([
 
 	return events, nil
 }
+
+// PurgeOlderThan deletes audit events whose created_at timestamp is
+// strictly less than the given time. Returns the count of deleted rows.
+// This is a bulk delete intended for periodic retention cleanup; it does
+// not return deleted event data.
+func (r *SQLiteAuditRepository) PurgeOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM audit_events WHERE created_at < ?", before.UTC())
+	if err != nil {
+		return 0, fmt.Errorf("purging audit events older than %s: %w", before.Format(time.RFC3339), err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("getting rows affected after purge: %w", err)
+	}
+	return count, nil
+}

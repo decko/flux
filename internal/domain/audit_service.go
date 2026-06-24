@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -59,5 +60,23 @@ func (s *AuditService) Record(ctx context.Context, action model.AuditAction, res
 		return fmt.Errorf("audit record: %w", err)
 	}
 
+	return nil
+}
+
+// PurgeOldEvents deletes audit events older than retentionDays and logs
+// the count of deleted records. If retentionDays is <= 0, nothing is deleted.
+func (s *AuditService) PurgeOldEvents(ctx context.Context, retentionDays int) error {
+	if retentionDays <= 0 {
+		return nil
+	}
+
+	before := time.Now().UTC().AddDate(0, 0, -retentionDays)
+	count, err := s.repo.PurgeOlderThan(ctx, before)
+	if err != nil {
+		return fmt.Errorf("purge old events: %w", err)
+	}
+	if count > 0 {
+		slog.Info("purged old audit events", "count", count, "retention_days", retentionDays, "before", before.Format(time.DateOnly))
+	}
 	return nil
 }

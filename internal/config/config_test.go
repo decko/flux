@@ -27,6 +27,9 @@ func TestDefaults(t *testing.T) {
 	if cfg.Logging.Level != "info" {
 		t.Errorf("Logging.Level = %q, want %q", cfg.Logging.Level, "info")
 	}
+	if cfg.Audit.RetentionDays != 90 {
+		t.Errorf("Audit.RetentionDays = %d, want %d", cfg.Audit.RetentionDays, 90)
+	}
 }
 
 func TestLoadFromFile(t *testing.T) {
@@ -472,6 +475,7 @@ func TestConfig_NoTokenInConfig(t *testing.T) {
 		SyncConfig{},
 		OrchestratorEntry{},
 		PipelineDef{},
+		AuditConfig{},
 	}
 	for _, v := range types {
 		checkNoTokenField(t, v)
@@ -715,6 +719,69 @@ orchestrators:
 	}
 	if cfg.Orchestrators[0].Pipelines[1].Config["model"] != "claude-hyena" {
 		t.Errorf("Pipelines[1].Config[\"model\"] = %q, want %q", cfg.Orchestrators[0].Pipelines[1].Config["model"], "claude-hyena")
+	}
+}
+
+// ─── Audit Config Tests ────────────────────────────────────────────────────
+
+func TestConfig_AuditDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Audit.RetentionDays != 90 {
+		t.Errorf("Audit.RetentionDays = %d, want 90", cfg.Audit.RetentionDays)
+	}
+}
+
+func TestConfig_AuditParsing(t *testing.T) {
+	t.Parallel()
+
+	content := []byte(`
+server:
+  port: 8080
+database:
+  path: ":memory:"
+cors:
+  origin: "*"
+logging:
+  level: info
+audit:
+  retention_days: 30
+`)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Audit.RetentionDays != 30 {
+		t.Errorf("Audit.RetentionDays = %d, want 30", cfg.Audit.RetentionDays)
+	}
+}
+
+func TestConfig_AuditCustomRetention(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Audit:    AuditConfig{RetentionDays: 7},
+	}
+
+	err := cfg.Validate()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Audit.RetentionDays != 7 {
+		t.Errorf("Audit.RetentionDays = %d, want 7", cfg.Audit.RetentionDays)
 	}
 }
 
