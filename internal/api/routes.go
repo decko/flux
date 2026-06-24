@@ -51,6 +51,7 @@ func (s *Server) registerRoutes() {
 			// Admin-only routes.
 			r.Group(func(r chi.Router) {
 				r.Use(RequireRole("admin"))
+				r.Get("/audit-events", s.handleAuditEvents)
 				r.Delete("/projects/{id}", s.handleDeleteProject)
 				r.Post("/pipeline-runs/{id}/trigger", s.handleTriggerPipelineRun)
 				r.Post("/pipeline-runs/{id}/cancel", s.handleCancelPipelineRun)

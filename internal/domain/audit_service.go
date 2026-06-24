@@ -24,6 +24,16 @@ func NewAuditService(repo repository.AuditRepository) *AuditService {
 	return &AuditService{repo: repo}
 }
 
+// List returns audit events matching the given filter criteria.
+// Events are ordered by created_at descending (most recent first).
+func (s *AuditService) List(ctx context.Context, filter repository.AuditFilter) ([]model.AuditEvent, error) {
+	events, err := s.repo.List(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("audit list: %w", err)
+	}
+	return events, nil
+}
+
 // Record creates an audit event from the given parameters. The actor's user ID
 // is extracted from the context via authctx.UserID. A UUID is generated for
 // the event ID and CreatedAt is set to the current UTC time.
