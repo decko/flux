@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/domain"
@@ -26,7 +26,7 @@ import (
 func setupPipelineServer(t *testing.T) (*Server, func(t *testing.T, run model.PipelineRun) model.PipelineRun) {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("failed to open in-memory SQLite: %v", err)
 	}
@@ -106,7 +106,7 @@ func (s *stubOrchestrator) Health(_ context.Context) error {
 func setupPipelineServerWithOrch(t *testing.T, orch orchestrator.OrchestratorAdapter) (*Server, func(t *testing.T, run model.PipelineRun) model.PipelineRun) {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("failed to open in-memory SQLite: %v", err)
 	}

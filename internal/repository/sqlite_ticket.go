@@ -33,7 +33,7 @@ type SQLiteTicketRepository struct {
 //
 // The caller must also ensure the "sqlite3" driver is imported:
 //
-//	import _ "github.com/mattn/go-sqlite3"
+//	import _ "modernc.org/sqlite"
 func NewSQLiteTicketRepository(db *sql.DB) *SQLiteTicketRepository {
 	return &SQLiteTicketRepository{db: db}
 }

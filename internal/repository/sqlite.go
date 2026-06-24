@@ -15,7 +15,7 @@ import (
 //
 // Callers must ensure the "sqlite3" driver is registered:
 //
-//	import _ "github.com/mattn/go-sqlite3"
+//	import _ "modernc.org/sqlite"
 //
 // Driver registration is not done here to avoid pulling the driver into
 // every package that imports the repository package.
