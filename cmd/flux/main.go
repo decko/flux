@@ -24,15 +24,87 @@ import (
 	"github.com/decko/flux/internal/api"
 	"github.com/decko/flux/internal/config"
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/model"
 	dbMigration "github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/repository"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
+	// Subcommand: "seed" — create an admin user from env vars and exit.
+	if len(os.Args) > 1 && os.Args[1] == "seed" {
+		if err := seedCmd(); err != nil {
+			slog.Error("seed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		slog.Error("flux", "error", err)
 		os.Exit(1)
 	}
+}
+
+// seedCmd creates an admin user from the FLUX_ADMIN_EMAIL and
+// FLUX_ADMIN_PASSWORD environment variables. If the user already
+// exists, it logs a warning and exits successfully (idempotent).
+func seedCmd() error {
+	email := os.Getenv("FLUX_ADMIN_EMAIL")
+	password := os.Getenv("FLUX_ADMIN_PASSWORD")
+	if email == "" || password == "" {
+		return fmt.Errorf("FLUX_ADMIN_EMAIL and FLUX_ADMIN_PASSWORD must be set")
+	}
+
+	cfg, err := config.Load("flux.yaml")
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer db.Close()
+
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		return fmt.Errorf("configure database: %w", err)
+	}
+
+	if err := dbMigration.Up(db); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	sdb := sqlx.NewDb(db, "sqlite")
+	userRepo := repository.NewSQLiteUserRepository(sdb)
+
+	// Check if the admin user already exists.
+	if _, err := userRepo.GetByEmail(context.Background(), email); err == nil {
+		slog.Info("admin user already exists", "email", email)
+		return nil
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	admin := model.User{
+		ID:           uuid.New().String(),
+		Email:        email,
+		PasswordHash: string(hash),
+		Role:         "admin",
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	if err := userRepo.Create(context.Background(), admin); err != nil {
+		return fmt.Errorf("create admin user: %w", err)
+	}
+
+	slog.Info("admin user created", "email", email)
+	return nil
 }
 
 func run() error {
