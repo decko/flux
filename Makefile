@@ -1,4 +1,4 @@
-.PHONY: build run dev test lint clean frontend backend
+.PHONY: build run dev test lint clean frontend backend migrate seed
 
 BINARY=flux
 GOFLAGS=-trimpath
@@ -30,3 +30,6 @@ clean:
 
 migrate:
 	go run ./cmd/flux migrate
+
+seed:
+	go run ./cmd/flux seed
