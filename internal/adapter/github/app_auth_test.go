@@ -516,8 +516,8 @@ func TestListInstallationRepositories_SinglePage(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/installation/repositories" {
-			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
+		if r.URL.Path != "/app/installations/install_42/repositories" {
+			t.Errorf("path = %s, want /app/installations/install_42/repositories", r.URL.Path)
 		}
 
 		auth := r.Header.Get("Authorization")
@@ -567,8 +567,8 @@ func TestListInstallationRepositories_MultiplePages(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/installation/repositories" {
-			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
+		if r.URL.Path != "/app/installations/install_42/repositories" {
+			t.Errorf("path = %s, want /app/installations/install_42/repositories", r.URL.Path)
 		}
 
 		auth := r.Header.Get("Authorization")
@@ -583,7 +583,7 @@ func TestListInstallationRepositories_MultiplePages(t *testing.T) {
 		nextBase := fmt.Sprintf("http://%s", r.Host)
 		switch page {
 		case "", "1":
-			w.Header().Set("Link", fmt.Sprintf(`<%s/installation/repositories?page=2>; rel="next"`, nextBase))
+			w.Header().Set("Link", fmt.Sprintf(`<%s/app/installations/install_42/repositories?page=2>; rel="next"`, nextBase))
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`[
 				{"id":101,"name":"repo-a","full_name":"user1/repo-a","html_url":"https://github.com/user1/repo-a","private":false}
@@ -632,8 +632,8 @@ func TestListInstallationRepositories_Empty(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/installation/repositories" {
-			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
+		if r.URL.Path != "/app/installations/install_42/repositories" {
+			t.Errorf("path = %s, want /app/installations/install_42/repositories", r.URL.Path)
 		}
 
 		auth := r.Header.Get("Authorization")

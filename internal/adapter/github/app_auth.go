@@ -236,7 +236,7 @@ func (a *AppAuth) ListInstallationRepositories(ctx context.Context, installation
 	}
 
 	var all []InstallationRepository
-	url := a.baseURL + "/installation/repositories"
+	url := a.baseURL + "/app/installations/" + installationID + "/repositories"
 	for url != "" {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 		if err != nil {
