@@ -251,3 +251,14 @@ func (r *SQLitePipelineRunRepository) Update(ctx context.Context, run model.Pipe
 	}
 	return nil
 }
+
+// HasActiveRun returns true if a pipeline run exists for the given
+// project and ticket with status pending or running.
+func (r *SQLitePipelineRunRepository) HasActiveRun(ctx context.Context, projectID, ticketID string) (bool, error) {
+	var count int
+	query := `SELECT COUNT(*) FROM pipeline_runs WHERE project_id = ? AND ticket_id = ? AND status IN (?, ?)`
+	if err := r.db.QueryRowContext(ctx, query, projectID, ticketID, string(model.RunStatusPending), string(model.RunStatusRunning)).Scan(&count); err != nil {
+		return false, fmt.Errorf("checking active runs: %w", err)
+	}
+	return count > 0, nil
+}

@@ -140,6 +140,10 @@ type PipelineRunRepository interface {
 	// Update modifies an existing pipeline run. Returns ErrNotFound if no
 	// run with the run's ID exists.
 	Update(ctx context.Context, run model.PipelineRun) error
+
+	// HasActiveRun returns true if a pipeline run exists for the given
+	// project and ticket with status pending or running.
+	HasActiveRun(ctx context.Context, projectID, ticketID string) (bool, error)
 }
 
 // AuditFilter defines criteria for listing audit events.

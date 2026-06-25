@@ -20,12 +20,22 @@ type triggerProjectRepo interface {
 	Get(ctx context.Context, id string) (model.Project, error)
 }
 
+// triggerRunRepo is the subset of PipelineRunRepository used by TriggerService
+// for deduplication — checking if an active run already exists.
+type triggerRunRepo interface {
+	HasActiveRun(ctx context.Context, projectID, ticketID string) (bool, error)
+}
+
 // TriggerService evaluates tickets against trigger rules and automatically
 // creates pipeline runs when conditions match. Currently uses hardcoded rules:
 // a ticket labeled "flux/agent" triggers the project's default pipeline.
+//
+// Deduplication: a pipeline run is NOT created if an active run (pending
+// or running) already exists for the same ticket and project.
 type TriggerService struct {
 	pipelineSvc triggerRunner
 	projectRepo triggerProjectRepo
+	runRepo     triggerRunRepo
 	selfUser    string
 }
 
@@ -33,20 +43,32 @@ type TriggerService struct {
 func NewTriggerService(
 	pipelineSvc triggerRunner,
 	projectRepo triggerProjectRepo,
+	runRepo triggerRunRepo,
 	selfUser string,
 ) *TriggerService {
 	return &TriggerService{
 		pipelineSvc: pipelineSvc,
 		projectRepo: projectRepo,
+		runRepo:     runRepo,
 		selfUser:    selfUser,
 	}
 }
 
 // CheckAndTrigger evaluates trigger rules against a ticket. If the ticket
-// matches a rule, a new pipeline run is created and triggered.
+// matches a rule and no active run exists, a new pipeline run is created.
 func (s *TriggerService) CheckAndTrigger(ctx context.Context, ticket model.Ticket) error {
 	// Rule: ticket labeled "flux/agent" triggers the project's default pipeline.
 	if !hasLabel(ticket.Labels, "flux/agent") {
+		return nil
+	}
+
+	// Deduplication: skip if an active run already exists.
+	active, err := s.runRepo.HasActiveRun(ctx, ticket.ProjectID, ticket.ID)
+	if err != nil {
+		return fmt.Errorf("trigger service: check active runs: %w", err)
+	}
+	if active {
+		slog.Info("skipping trigger: active run already exists", "ticket_id", ticket.ID)
 		return nil
 	}
 
@@ -56,12 +78,12 @@ func (s *TriggerService) CheckAndTrigger(ctx context.Context, ticket model.Ticke
 	}
 
 	run := model.PipelineRun{
-		ProjectID:     ticket.ProjectID,
-		TicketID:      ticket.ID,
-		Orchestrator:  "soda",
-		Pipeline:      resolveDefaultPipeline(project.Pipelines),
-		Status:        model.RunStatusPending,
-		Phases:        []model.PhaseResult{},
+		ProjectID:    ticket.ProjectID,
+		TicketID:     ticket.ID,
+		Orchestrator: "soda",
+		Pipeline:     resolveDefaultPipeline(project.Pipelines),
+		Status:       model.RunStatusPending,
+		Phases:       []model.PhaseResult{},
 	}
 
 	if err := s.pipelineSvc.Create(ctx, run); err != nil {
