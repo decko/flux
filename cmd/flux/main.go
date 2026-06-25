@@ -51,21 +51,15 @@ func main() {
 	}
 }
 
-// seedCmd creates an admin user. Credentials can be supplied via flags,
-// stdin, or environment variables:
+// seedCmd creates an admin user. The --email flag is required.
+// The password is read from --password-file or --password-stdin.
+// The command is idempotent — safe to run multiple times.
 //
 //	flux seed --email admin@flux.dev --password-file /run/secrets/admin-pw
 //	flux seed --email admin@flux.dev --password-stdin < ./admin-pw
-//	FLUX_ADMIN_EMAIL=admin@flux.dev FLUX_ADMIN_PASSWORD=admin123 flux seed
-//
-// Priority: --password-file > --password-stdin > FLUX_ADMIN_PASSWORD
-// --email > FLUX_ADMIN_EMAIL
-//
-// Password flags are preferred over env vars because env vars
-// are visible in /proc/<pid>/environ. The command is idempotent.
 func seedCmd() error {
 	flags := flag.NewFlagSet("seed", flag.ExitOnError)
-	email := flags.String("email", os.Getenv("FLUX_ADMIN_EMAIL"), "admin email")
+	email := flags.String("email", "", "admin email (required)")
 	passwordFile := flags.String("password-file", "", "read password from file")
 	passwordStdin := flags.Bool("password-stdin", false, "read password from stdin")
 
@@ -74,7 +68,7 @@ func seedCmd() error {
 	}
 
 	if *email == "" {
-		return fmt.Errorf("email required: use --email or FLUX_ADMIN_EMAIL")
+		return fmt.Errorf("--email is required")
 	}
 
 	password, err := readPassword(*passwordFile, *passwordStdin)
@@ -131,9 +125,8 @@ func seedCmd() error {
 	return nil
 }
 
-// readPassword obtains a password from the most secure available source,
-// in priority order: --password-file, --password-stdin, FLUX_ADMIN_PASSWORD.
-// Prints a warning to stderr when falling back to the environment variable.
+// readPassword obtains a password from --password-file, --password-stdin,
+// in that priority order. Returns an error if neither is provided.
 func readPassword(passwordFile string, passwordStdin bool) (string, error) {
 	if passwordFile != "" {
 		data, err := os.ReadFile(passwordFile)
@@ -151,13 +144,7 @@ func readPassword(passwordFile string, passwordStdin bool) (string, error) {
 		return strings.TrimSpace(scanner.Text()), nil
 	}
 
-	if pw := os.Getenv("FLUX_ADMIN_PASSWORD"); pw != "" {
-		fmt.Fprintln(os.Stderr, "WARNING: reading password from FLUX_ADMIN_PASSWORD env var.")
-		fmt.Fprintln(os.Stderr, "Prefer --password-file or --password-stdin for better security.")
-		return pw, nil
-	}
-
-	return "", fmt.Errorf("no password provided: use --password-file, --password-stdin, or FLUX_ADMIN_PASSWORD")
+	return "", fmt.Errorf("no password provided: use --password-file or --password-stdin")
 }
 
 func run() error {
