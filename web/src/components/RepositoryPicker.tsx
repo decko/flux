@@ -20,7 +20,19 @@ export function RepositoryPicker({
   const query = useQuery<GitHubInstallationRepo[]>({
     queryKey: ['github-repos', installationId],
     queryFn: () => fetchInstallationRepos(installationId),
+    enabled: installationId > 0,
   });
+
+  if (installationId <= 0) {
+    return (
+      <div
+        role="status"
+        className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500"
+      >
+        Select a GitHub App installation to see repositories
+      </div>
+    );
+  }
 
   if (query.isPending) {
     return (
@@ -64,6 +76,7 @@ export function RepositoryPicker({
           className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-left text-sm hover:bg-gray-50"
         >
           <span className="font-medium text-gray-900">{repo.name}</span>
+          <span className="ml-2 text-xs text-gray-400">{repo.full_name}</span>
           {repo.private && (
             <span className="ml-2 text-xs text-gray-500">Private</span>
           )}
