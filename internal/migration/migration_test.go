@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestUp_CreatesAllTables(t *testing.T) {
 	tables := []string{"users", "projects", "tickets", "pull_requests", "pipeline_runs", "audit_events"}
 	for _, table := range tables {
 		var count int
-		err := db.QueryRow(
+		err := db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
 			table,
 		).Scan(&count)
@@ -42,7 +43,7 @@ func TestUp_CreatesAllTables(t *testing.T) {
 	indexes := []string{"idx_audit_actor", "idx_audit_resource", "idx_audit_created"}
 	for _, idx := range indexes {
 		var count int
-		if err := db.QueryRow(
+		if err := db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?",
 			idx,
 		).Scan(&count); err != nil {
@@ -54,7 +55,7 @@ func TestUp_CreatesAllTables(t *testing.T) {
 
 	// Verify schema_migrations table tracks applied migrations.
 	var versionCount int
-	if err := db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versionCount); err != nil {
+	if err := db.QueryRowContext(context.Background(), "SELECT count(*) FROM schema_migrations").Scan(&versionCount); err != nil {
 		t.Errorf("schema_migrations query: %v", err)
 	} else if versionCount < 1 {
 		t.Errorf("expected at least 1 migration record, got %d", versionCount)
@@ -81,7 +82,7 @@ func TestUp_ProjectsTableInstallationIDColumn(t *testing.T) {
 
 	// Verify the column exists (added by migration 007).
 	var count int
-	err = db.QueryRow(
+	err = db.QueryRowContext(context.Background(),
 		"SELECT count(*) FROM pragma_table_info('projects') WHERE name='github_installation_id'",
 	).Scan(&count)
 	if err != nil {
@@ -93,7 +94,7 @@ func TestUp_ProjectsTableInstallationIDColumn(t *testing.T) {
 
 	// Verify the current migration version is at least 7.
 	var version int
-	err = db.QueryRow("SELECT max(version) FROM schema_migrations").Scan(&version)
+	err = db.QueryRowContext(context.Background(), "SELECT max(version) FROM schema_migrations").Scan(&version)
 	if err != nil {
 		t.Fatalf("checking schema version: %v", err)
 	}

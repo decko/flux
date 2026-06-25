@@ -180,3 +180,92 @@ func (a *AppAuth) exchangeJWTForToken(ctx context.Context, jwtStr, installationI
 
 	return result.Token, expiresAt, nil
 }
+
+// ListInstallations retrieves all GitHub App installations. It uses the App JWT
+// for authentication and follows pagination via Link headers. Returns an error if
+// the GitHub API request fails or returns a non-2xx status.
+func (a *AppAuth) ListInstallations(ctx context.Context) ([]Installation, error) {
+	jwtToken, err := a.generateJWT()
+	if err != nil {
+		return nil, fmt.Errorf("list installations: generate JWT: %w", err)
+	}
+
+	var all []Installation
+	url := a.baseURL + "/app/installations"
+	for url != "" {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("list installations: create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+jwtToken)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := a.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("list installations: execute request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("list installations: HTTP %d: %s", resp.StatusCode, string(body))
+		}
+
+		var page []Installation
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("list installations: decode response: %w", err)
+		}
+		_ = resp.Body.Close()
+
+		all = append(all, page...)
+		url = GetNextPageURL(resp)
+	}
+
+	return all, nil
+}
+
+// ListInstallationRepositories retrieves all repositories accessible to the given
+// GitHub App installation. It uses the App JWT for authentication and follows
+// pagination via Link headers. Returns an error if the GitHub API request fails
+// or returns a non-2xx status.
+func (a *AppAuth) ListInstallationRepositories(ctx context.Context, installationID string) ([]InstallationRepository, error) {
+	jwtToken, err := a.generateJWT()
+	if err != nil {
+		return nil, fmt.Errorf("list installation repos: generate JWT: %w", err)
+	}
+
+	var all []InstallationRepository
+	url := a.baseURL + "/installation/repositories"
+	for url != "" {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("list installation repos: create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+jwtToken)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := a.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("list installation repos: execute request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("list installation repos: HTTP %d: %s", resp.StatusCode, string(body))
+		}
+
+		var page []InstallationRepository
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("list installation repos: decode response: %w", err)
+		}
+		_ = resp.Body.Close()
+
+		all = append(all, page...)
+		url = GetNextPageURL(resp)
+	}
+
+	return all, nil
+}
