@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -11,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,14 +51,35 @@ func main() {
 	}
 }
 
-// seedCmd creates an admin user from the FLUX_ADMIN_EMAIL and
-// FLUX_ADMIN_PASSWORD environment variables. If the user already
-// exists, it logs a warning and exits successfully (idempotent).
+// seedCmd creates an admin user. Credentials can be supplied via flags,
+// stdin, or environment variables:
+//
+//	flux seed --email admin@flux.dev --password-file /run/secrets/admin-pw
+//	flux seed --email admin@flux.dev --password-stdin < ./admin-pw
+//	FLUX_ADMIN_EMAIL=admin@flux.dev FLUX_ADMIN_PASSWORD=admin123 flux seed
+//
+// Priority: --password-file > --password-stdin > FLUX_ADMIN_PASSWORD
+// --email > FLUX_ADMIN_EMAIL
+//
+// Password flags are preferred over env vars because env vars
+// are visible in /proc/<pid>/environ. The command is idempotent.
 func seedCmd() error {
-	email := os.Getenv("FLUX_ADMIN_EMAIL")
-	password := os.Getenv("FLUX_ADMIN_PASSWORD")
-	if email == "" || password == "" {
-		return fmt.Errorf("FLUX_ADMIN_EMAIL and FLUX_ADMIN_PASSWORD must be set")
+	flags := flag.NewFlagSet("seed", flag.ExitOnError)
+	email := flags.String("email", os.Getenv("FLUX_ADMIN_EMAIL"), "admin email")
+	passwordFile := flags.String("password-file", "", "read password from file")
+	passwordStdin := flags.Bool("password-stdin", false, "read password from stdin")
+
+	if err := flags.Parse(os.Args[2:]); err != nil {
+		return err
+	}
+
+	if *email == "" {
+		return fmt.Errorf("email required: use --email or FLUX_ADMIN_EMAIL")
+	}
+
+	password, err := readPassword(*passwordFile, *passwordStdin)
+	if err != nil {
+		return err
 	}
 
 	cfg, err := config.Load("flux.yaml")
@@ -81,8 +105,8 @@ func seedCmd() error {
 	userRepo := repository.NewSQLiteUserRepository(sdb)
 
 	// Check if the admin user already exists.
-	if _, err := userRepo.GetByEmail(context.Background(), email); err == nil {
-		slog.Info("admin user already exists", "email", email)
+	if _, err := userRepo.GetByEmail(context.Background(), *email); err == nil {
+		slog.Info("admin user already exists", "email", *email)
 		return nil
 	}
 
@@ -93,7 +117,7 @@ func seedCmd() error {
 
 	admin := model.User{
 		ID:           uuid.New().String(),
-		Email:        email,
+		Email:        *email,
 		PasswordHash: string(hash),
 		Role:         "admin",
 		CreatedAt:    time.Now().UTC(),
@@ -103,8 +127,37 @@ func seedCmd() error {
 		return fmt.Errorf("create admin user: %w", err)
 	}
 
-	slog.Info("admin user created", "email", email)
+	slog.Info("admin user created", "email", *email)
 	return nil
+}
+
+// readPassword obtains a password from the most secure available source,
+// in priority order: --password-file, --password-stdin, FLUX_ADMIN_PASSWORD.
+// Prints a warning to stderr when falling back to the environment variable.
+func readPassword(passwordFile string, passwordStdin bool) (string, error) {
+	if passwordFile != "" {
+		data, err := os.ReadFile(passwordFile)
+		if err != nil {
+			return "", fmt.Errorf("read password file: %w", err)
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+
+	if passwordStdin {
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() {
+			return "", fmt.Errorf("read password from stdin: %w", scanner.Err())
+		}
+		return strings.TrimSpace(scanner.Text()), nil
+	}
+
+	if pw := os.Getenv("FLUX_ADMIN_PASSWORD"); pw != "" {
+		fmt.Fprintln(os.Stderr, "WARNING: reading password from FLUX_ADMIN_PASSWORD env var.")
+		fmt.Fprintln(os.Stderr, "Prefer --password-file or --password-stdin for better security.")
+		return pw, nil
+	}
+
+	return "", fmt.Errorf("no password provided: use --password-file, --password-stdin, or FLUX_ADMIN_PASSWORD")
 }
 
 func run() error {
