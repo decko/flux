@@ -18,6 +18,25 @@ import (
 // Default GitHub REST API base URL.
 const defaultBaseURL = "https://api.github.com"
 
+// Installation represents a GitHub App installation.
+type Installation struct {
+	ID      int64 `json:"id"`
+	Account struct {
+		Login string `json:"login"`
+	} `json:"account"`
+	TargetType string `json:"target_type"`
+	HTMLURL    string `json:"html_url"`
+}
+
+// InstallationRepository represents a repository accessible via an installation.
+type InstallationRepository struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	HTMLURL  string `json:"html_url"`
+	Private  bool   `json:"private"`
+}
+
 // AppAuth handles GitHub App authentication. It generates signed JWTs from a
 // private key and exchanges them for short-lived installation access tokens,
 // caching tokens until they are close to expiry.
@@ -162,4 +181,109 @@ func (a *AppAuth) exchangeJWTForToken(ctx context.Context, jwtStr, installationI
 	}
 
 	return result.Token, expiresAt, nil
+}
+
+// ListInstallations retrieves all GitHub App installations. It uses the App JWT
+// for authentication and follows pagination via Link headers. Returns an error if
+// the GitHub API request fails or returns a non-2xx status.
+func (a *AppAuth) ListInstallations(ctx context.Context) ([]Installation, error) {
+	jwtToken, err := a.generateJWT()
+	if err != nil {
+		return nil, fmt.Errorf("list installations: generate JWT: %w", err)
+	}
+
+	const maxPages = 100
+	pageCount := 0
+	var all []Installation
+	url := a.baseURL + "/app/installations"
+	for url != "" && pageCount < maxPages {
+		pageCount++
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("list installations: create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+jwtToken)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := a.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("list installations: execute request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("list installations: HTTP %d: %s", resp.StatusCode, string(body))
+		}
+
+		var page []Installation
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("list installations: decode response: %w", err)
+		}
+		_ = resp.Body.Close()
+
+		all = append(all, page...)
+		url = GetNextPageURL(resp)
+	}
+	if url != "" {
+		return nil, fmt.Errorf("list installations: exceeded max pages (%d)", maxPages)
+	}
+
+	return all, nil
+}
+
+// ListInstallationRepositories retrieves all repositories accessible to the given
+// GitHub App installation. It obtains an installation access token via GetToken,
+// then calls the /installation/repositories endpoint with that token. Follows
+// pagination via Link headers. Returns an error if the token exchange fails or
+// the GitHub API request fails.
+func (a *AppAuth) ListInstallationRepositories(ctx context.Context, installationID string) ([]InstallationRepository, error) {
+	token, err := a.GetToken(ctx, installationID)
+	if err != nil {
+		return nil, fmt.Errorf("list installation repos: get token: %w", err)
+	}
+
+	const maxPages = 100
+	pageCount := 0
+	var all []InstallationRepository
+	url := a.baseURL + "/installation/repositories"
+	for url != "" && pageCount < maxPages {
+		pageCount++
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+		if err != nil {
+			return nil, fmt.Errorf("list installation repos: create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := a.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("list installation repos: execute request: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("list installation repos: HTTP %d: %s", resp.StatusCode, string(body))
+		}
+
+		var envelope struct {
+			TotalCount   int                      `json:"total_count"`
+			Repositories []InstallationRepository `json:"repositories"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("list installation repos: decode response: %w", err)
+		}
+		_ = resp.Body.Close()
+
+		all = append(all, envelope.Repositories...)
+		url = GetNextPageURL(resp)
+	}
+	if url != "" {
+		return nil, fmt.Errorf("list installation repos: exceeded max pages (%d)", maxPages)
+	}
+
+	return all, nil
 }

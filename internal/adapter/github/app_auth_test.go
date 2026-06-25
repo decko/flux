@@ -312,6 +312,408 @@ func TestExchangeJWT_Error(t *testing.T) {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// ListInstallations
+// ---------------------------------------------------------------------------
+
+func TestListInstallations_SinglePage(t *testing.T) {
+	pemKey, privKey := generateTestKey(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/app/installations" {
+			t.Errorf("path = %s, want /app/installations", r.URL.Path)
+		}
+
+		auth := r.Header.Get("Authorization")
+		if !verifyAuthHasJWT(t, auth, privKey) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Header.Get("Accept") != "application/vnd.github.v3+json" {
+			t.Errorf("Accept header = %q, want %q", r.Header.Get("Accept"), "application/vnd.github.v3+json")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[
+			{"id":1,"account":{"login":"user1"},"target_type":"User","html_url":"https://github.com/apps/myapp/installations/1"},
+			{"id":2,"account":{"login":"org1"},"target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/2"}
+		]`))
+	}))
+	defer srv.Close()
+
+	a, err := NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	a.httpClient = srv.Client()
+	a.baseURL = srv.URL
+
+	installations, err := a.ListInstallations(context.Background())
+	if err != nil {
+		t.Fatalf("ListInstallations: %v", err)
+	}
+	if len(installations) != 2 {
+		t.Fatalf("got %d installations, want 2", len(installations))
+	}
+	if installations[0].ID != 1 {
+		t.Errorf("installations[0].ID = %d, want 1", installations[0].ID)
+	}
+	if installations[0].Account.Login != "user1" {
+		t.Errorf("installations[0].Account.Login = %q, want %q", installations[0].Account.Login, "user1")
+	}
+	if installations[1].TargetType != "Organization" {
+		t.Errorf("installations[1].TargetType = %q, want %q", installations[1].TargetType, "Organization")
+	}
+}
+
+func TestListInstallations_MultiplePages(t *testing.T) {
+	pemKey, privKey := generateTestKey(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/app/installations" {
+			t.Errorf("path = %s, want /app/installations", r.URL.Path)
+		}
+
+		auth := r.Header.Get("Authorization")
+		if !verifyAuthHasJWT(t, auth, privKey) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		page := r.URL.Query().Get("page")
+		w.Header().Set("Content-Type", "application/json")
+
+		nextBase := fmt.Sprintf("http://%s", r.Host)
+		switch page {
+		case "", "1":
+			w.Header().Set("Link", fmt.Sprintf(`<%s/app/installations?page=2>; rel="next"`, nextBase))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[
+				{"id":1,"account":{"login":"user1"},"target_type":"User","html_url":"https://github.com/apps/myapp/installations/1"},
+				{"id":2,"account":{"login":"org1"},"target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/2"}
+			]`))
+		case "2":
+			w.Header().Set("Link", fmt.Sprintf(`<%s/app/installations?page=3>; rel="next"`, nextBase))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[
+				{"id":3,"account":{"login":"user2"},"target_type":"User","html_url":"https://github.com/apps/myapp/installations/3"},
+				{"id":4,"account":{"login":"org2"},"target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/4"}
+			]`))
+		case "3":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[
+				{"id":5,"account":{"login":"user3"},"target_type":"User","html_url":"https://github.com/apps/myapp/installations/5"},
+				{"id":6,"account":{"login":"org3"},"target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/6"}
+			]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	a.httpClient = srv.Client()
+	a.baseURL = srv.URL
+
+	installations, err := a.ListInstallations(context.Background())
+	if err != nil {
+		t.Fatalf("ListInstallations: %v", err)
+	}
+	if len(installations) != 6 {
+		t.Fatalf("got %d installations, want 6", len(installations))
+	}
+	// Verify all page IDs are present.
+	ids := make(map[int64]bool)
+	for _, inst := range installations {
+		ids[inst.ID] = true
+	}
+	for _, id := range []int64{1, 2, 3, 4, 5, 6} {
+		if !ids[id] {
+			t.Errorf("missing installation ID %d", id)
+		}
+	}
+}
+
+func TestListInstallations_Empty(t *testing.T) {
+	pemKey, privKey := generateTestKey(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/app/installations" {
+			t.Errorf("path = %s, want /app/installations", r.URL.Path)
+		}
+
+		auth := r.Header.Get("Authorization")
+		if !verifyAuthHasJWT(t, auth, privKey) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	a, err := NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	a.httpClient = srv.Client()
+	a.baseURL = srv.URL
+
+	installations, err := a.ListInstallations(context.Background())
+	if err != nil {
+		t.Fatalf("ListInstallations: %v", err)
+	}
+	if len(installations) != 0 {
+		t.Fatalf("got %d installations, want 0", len(installations))
+	}
+}
+
+func TestListInstallations_HTTPError(t *testing.T) {
+	pemKey, _ := generateTestKey(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
+	}))
+	defer srv.Close()
+
+	a, err := NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	a.httpClient = srv.Client()
+	a.baseURL = srv.URL
+
+	_, err = a.ListInstallations(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 401 response, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ListInstallationRepositories
+// ---------------------------------------------------------------------------
+
+func TestListInstallationRepositories_SinglePage(t *testing.T) {
+	pemKey, _ := generateTestKey(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/installation/repositories" {
+			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
+		}
+
+		if auth := r.Header.Get("Authorization"); auth != "Bearer ghs_test_token" {
+			t.Errorf("Authorization = %q, want %q", auth, "Bearer ghs_test_token")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"total_count":2,
+			"repositories":[
+				{"id":101,"name":"repo-a","full_name":"user1/repo-a","html_url":"https://github.com/user1/repo-a","private":false},
+				{"id":102,"name":"repo-b","full_name":"org1/repo-b","html_url":"https://github.com/org1/repo-b","private":true}
+			]
+		}`))
+	}))
+	defer srv.Close()
+
+	a, err := NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	a.httpClient = srv.Client()
+	a.baseURL = srv.URL
+	a.cache["install_42"] = &cachedToken{
+		token:     "ghs_test_token",
+		expiresAt: time.Now().Add(10 * time.Minute),
+	}
+
+	repos, err := a.ListInstallationRepositories(context.Background(), "install_42")
+	if err != nil {
+		t.Fatalf("ListInstallationRepositories: %v", err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("got %d repos, want 2", len(repos))
+	}
+	if repos[0].ID != 101 {
+		t.Errorf("repos[0].ID = %d, want 101", repos[0].ID)
+	}
+	if repos[0].Name != "repo-a" {
+		t.Errorf("repos[0].Name = %q, want %q", repos[0].Name, "repo-a")
+	}
+	if repos[1].Private != true {
+		t.Errorf("repos[1].Private = %t, want true", repos[1].Private)
+	}
+}
+
+func TestListInstallationRepositories_MultiplePages(t *testing.T) {
+	pemKey, _ := generateTestKey(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/installation/repositories" {
+			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
+		}
+
+		if auth := r.Header.Get("Authorization"); auth != "Bearer ghs_test_token" {
+			t.Errorf("Authorization = %q, want %q", auth, "Bearer ghs_test_token")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		page := r.URL.Query().Get("page")
+		w.Header().Set("Content-Type", "application/json")
+
+		nextBase := fmt.Sprintf("http://%s", r.Host)
+		switch page {
+		case "", "1":
+			w.Header().Set("Link", fmt.Sprintf(`<%s/installation/repositories?page=2>; rel="next"`, nextBase))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"total_count":2,
+				"repositories":[
+					{"id":101,"name":"repo-a","full_name":"user1/repo-a","html_url":"https://github.com/user1/repo-a","private":false}
+				]
+			}`))
+		case "2":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"total_count":2,
+				"repositories":[
+					{"id":102,"name":"repo-b","full_name":"org1/repo-b","html_url":"https://github.com/org1/repo-b","private":true}
+				]
+			}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	a, err := NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	a.httpClient = srv.Client()
+	a.baseURL = srv.URL
+	a.cache["install_42"] = &cachedToken{
+		token:     "ghs_test_token",
+		expiresAt: time.Now().Add(10 * time.Minute),
+	}
+
+	repos, err := a.ListInstallationRepositories(context.Background(), "install_42")
+	if err != nil {
+		t.Fatalf("ListInstallationRepositories: %v", err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("got %d repos, want 2", len(repos))
+	}
+	// Verify both page IDs are present.
+	ids := make(map[int64]bool)
+	for _, r := range repos {
+		ids[r.ID] = true
+	}
+	for _, id := range []int64{101, 102} {
+		if !ids[id] {
+			t.Errorf("missing repository ID %d", id)
+		}
+	}
+}
+
+func TestListInstallationRepositories_Empty(t *testing.T) {
+	pemKey, _ := generateTestKey(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/installation/repositories" {
+			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
+		}
+
+		if auth := r.Header.Get("Authorization"); auth != "Bearer ghs_test_token" {
+			t.Errorf("Authorization = %q, want %q", auth, "Bearer ghs_test_token")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"total_count":0,"repositories":[]}`))
+	}))
+	defer srv.Close()
+
+	a, err := NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	a.httpClient = srv.Client()
+	a.baseURL = srv.URL
+	a.cache["install_42"] = &cachedToken{
+		token:     "ghs_test_token",
+		expiresAt: time.Now().Add(10 * time.Minute),
+	}
+
+	repos, err := a.ListInstallationRepositories(context.Background(), "install_42")
+	if err != nil {
+		t.Fatalf("ListInstallationRepositories: %v", err)
+	}
+	if len(repos) != 0 {
+		t.Fatalf("got %d repos, want 0", len(repos))
+	}
+}
+
+func TestListInstallationRepositories_HTTPError(t *testing.T) {
+	pemKey, _ := generateTestKey(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/installation/repositories" {
+			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not found"}`))
+	}))
+	defer srv.Close()
+
+	a, err := NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	a.httpClient = srv.Client()
+	a.baseURL = srv.URL
+	a.cache["install_42"] = &cachedToken{
+		token:     "ghs_test_token",
+		expiresAt: time.Now().Add(10 * time.Minute),
+	}
+
+	_, err = a.ListInstallationRepositories(context.Background(), "install_42")
+	if err == nil {
+		t.Fatal("expected error for 404 response, got nil")
+	}
+}
+
 // verifyAuthHasJWT checks that auth contains "Bearer " + a valid JWT signed
 // by privKey. Returns true if the JWT is valid.
 func verifyAuthHasJWT(t *testing.T, auth string, privKey *rsa.PrivateKey) bool {
