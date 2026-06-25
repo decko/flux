@@ -62,6 +62,7 @@ const sampleProjects = [
     },
     adapters: [],
     pipelines: [],
+    installation_id: 101,
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-01T00:00:00Z',
   },
@@ -77,8 +78,43 @@ const sampleProjects = [
     },
     adapters: [],
     pipelines: [],
+    installation_id: 202,
     created_at: '2026-06-02T00:00:00Z',
     updated_at: '2026-06-02T00:00:00Z',
+  },
+];
+
+// ---- Wizard test fixtures ----
+
+const sampleInstallations = [
+  {
+    id: 101,
+    account: { login: 'flux-org' },
+    target_type: 'Organization',
+    html_url: 'https://github.com/flux-org',
+  },
+  {
+    id: 202,
+    account: { login: 'decko' },
+    target_type: 'User',
+    html_url: 'https://github.com/decko',
+  },
+];
+
+const sampleRepos = [
+  {
+    id: 1,
+    name: 'flux',
+    full_name: 'flux-org/flux',
+    html_url: 'https://github.com/flux-org/flux',
+    private: false,
+  },
+  {
+    id: 2,
+    name: 'web-app',
+    full_name: 'flux-org/web-app',
+    html_url: 'https://github.com/flux-org/web-app',
+    private: true,
   },
 ];
 
@@ -221,6 +257,7 @@ describe('ProjectsPage', () => {
       definition: { language: '', framework: '', conventions: [], architecture: '' },
       adapters: [],
       pipelines: [],
+      installation_id: 0,
       created_at: '2026-06-22T00:00:00Z',
       updated_at: '2026-06-22T00:00:00Z',
     };
@@ -239,6 +276,7 @@ describe('ProjectsPage', () => {
       );
     });
 
+    // BEGIN: OLD_FORM_TEST — tests the legacy manual form (will be replaced by wizard)
     const postCall = mockFetch.mock.calls.find(
       ([url, opts]) => url === '/api/v1/projects' && (opts as RequestInit).method === 'POST',
     )!;
@@ -247,6 +285,7 @@ describe('ProjectsPage', () => {
       name: 'new-project',
       repo_url: 'https://github.com/example/new',
     });
+    // END: OLD_FORM_TEST
   });
 
   it('shows the newly created project in the list', async () => {
@@ -267,6 +306,7 @@ describe('ProjectsPage', () => {
       definition: { language: '', framework: '', conventions: [], architecture: '' },
       adapters: [],
       pipelines: [],
+      installation_id: 0,
       created_at: '2026-06-22T00:00:00Z',
       updated_at: '2026-06-22T00:00:00Z',
     };
@@ -280,6 +320,360 @@ describe('ProjectsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('new-project')).toBeInTheDocument();
+    });
+  });
+});
+
+// --- Project creation wizard tests (Issue #156 — RED phase) ---
+// These tests exercise the new 3-step wizard flow that replaces the
+// manual create form. They EXPECT TO FAIL because the wizard is not
+// yet implemented.
+
+describe('Project creation wizard', () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+    localStorage.setItem('flux_token', 'test-token');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  describe('Step 1 — Installation Picker', () => {
+    it('renders installation picker as step 1', async () => {
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        if (url === '/api/v1/github/installations' && method === 'GET') {
+          return Promise.resolve(jsonResponse(sampleInstallations));
+        }
+        if (url === '/api/v1/projects' && method === 'GET') {
+          return Promise.resolve(jsonResponse([]));
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+      });
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('flux-org')).toBeInTheDocument();
+      });
+      expect(screen.getByText('decko')).toBeInTheDocument();
+    });
+  });
+
+  describe('Step 2 — Repository Picker', () => {
+    it('advances to step 2 after selecting installation', async () => {
+      const user = userEvent.setup();
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        if (url === '/api/v1/github/installations' && method === 'GET') {
+          return Promise.resolve(jsonResponse(sampleInstallations));
+        }
+        if (
+          url === '/api/v1/github/installations/101/repositories' &&
+          method === 'GET'
+        ) {
+          return Promise.resolve(jsonResponse(sampleRepos));
+        }
+        if (url === '/api/v1/projects' && method === 'GET') {
+          return Promise.resolve(jsonResponse([]));
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+      });
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('flux-org')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('flux-org'));
+
+      // Should now show RepositoryPicker content
+      await waitFor(() => {
+        expect(screen.getByText('flux')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Step 3 — Confirm & Create', () => {
+    it('advances to step 3 after selecting repository', async () => {
+      const user = userEvent.setup();
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        if (url === '/api/v1/github/installations' && method === 'GET') {
+          return Promise.resolve(jsonResponse(sampleInstallations));
+        }
+        if (
+          url === '/api/v1/github/installations/101/repositories' &&
+          method === 'GET'
+        ) {
+          return Promise.resolve(jsonResponse(sampleRepos));
+        }
+        if (url === '/api/v1/projects' && method === 'GET') {
+          return Promise.resolve(jsonResponse([]));
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+      });
+
+      renderPage();
+
+      // Step 1: select installation
+      await waitFor(() => {
+        expect(screen.getByText('flux-org')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('flux-org'));
+
+      // Step 2: select repository
+      await waitFor(() => {
+        expect(screen.getByText('flux')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('flux'));
+
+      // Step 3: confirmation step shows repo name, url, and Create button
+      await waitFor(() => {
+        expect(
+          screen.getByRole('button', { name: /create project/i }),
+        ).toBeInTheDocument();
+      });
+      expect(screen.getByText('flux')).toBeInTheDocument();
+      expect(
+        screen.getByText('https://github.com/flux-org/flux'),
+      ).toBeInTheDocument();
+    });
+
+    it('creates project with installation_id on confirm', async () => {
+      const user = userEvent.setup();
+      const createdProject = {
+        id: 'proj-wizard',
+        name: 'flux',
+        repo_url: 'https://github.com/flux-org/flux',
+        definition: {
+          language: '',
+          framework: '',
+          conventions: [] as string[],
+          architecture: '',
+        },
+        adapters: [] as unknown[],
+        pipelines: [] as unknown[],
+        installation_id: 101,
+        created_at: '2026-06-22T00:00:00Z',
+        updated_at: '2026-06-22T00:00:00Z',
+      };
+
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        if (url === '/api/v1/github/installations' && method === 'GET') {
+          return Promise.resolve(jsonResponse(sampleInstallations));
+        }
+        if (
+          url === '/api/v1/github/installations/101/repositories' &&
+          method === 'GET'
+        ) {
+          return Promise.resolve(jsonResponse(sampleRepos));
+        }
+        if (url === '/api/v1/projects' && method === 'GET') {
+          return Promise.resolve(jsonResponse([createdProject]));
+        }
+        if (url === '/api/v1/projects' && method === 'POST') {
+          return Promise.resolve(jsonResponse(createdProject, 201));
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+      });
+
+      renderPage();
+
+      // Step 1: select installation
+      await waitFor(() => {
+        expect(screen.getByText('flux-org')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('flux-org'));
+
+      // Step 2: select repository
+      await waitFor(() => {
+        expect(screen.getByText('flux')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('flux'));
+
+      // Step 3: click Create Project
+      await waitFor(() => {
+        expect(
+          screen.getByRole('button', { name: /create project/i }),
+        ).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /create project/i }));
+
+      // Verify the POST body includes installation_id
+      await waitFor(() => {
+        const postCall = mockFetch.mock.calls.find(
+          ([url, opts]) =>
+            url === '/api/v1/projects' &&
+            (opts as RequestInit)?.method === 'POST',
+        );
+        expect(postCall).toBeDefined();
+        if (postCall) {
+          const body = JSON.parse(
+            (postCall[1] as RequestInit).body as string,
+          );
+          expect(body).toEqual({
+            name: 'flux',
+            repo_url: 'https://github.com/flux-org/flux',
+            installation_id: 101,
+          });
+        }
+      });
+    });
+  });
+
+  describe('Navigation', () => {
+    it('back button returns to previous step', async () => {
+      const user = userEvent.setup();
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        if (url === '/api/v1/github/installations' && method === 'GET') {
+          return Promise.resolve(jsonResponse(sampleInstallations));
+        }
+        if (
+          url === '/api/v1/github/installations/101/repositories' &&
+          method === 'GET'
+        ) {
+          return Promise.resolve(jsonResponse(sampleRepos));
+        }
+        if (url === '/api/v1/projects' && method === 'GET') {
+          return Promise.resolve(jsonResponse([]));
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+      });
+
+      renderPage();
+
+      // Step 1 → Step 2
+      await waitFor(() => {
+        expect(screen.getByText('flux-org')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('flux-org'));
+
+      // Confirm we're on step 2
+      await waitFor(() => {
+        expect(screen.getByText('flux')).toBeInTheDocument();
+      });
+
+      // Click Back → should return to step 1
+      await user.click(screen.getByRole('button', { name: /back/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('flux-org')).toBeInTheDocument();
+        expect(screen.getByText('decko')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Error handling', () => {
+    it('shows GitHub App not configured when installations fail with 503', async () => {
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        if (url === '/api/v1/github/installations' && method === 'GET') {
+          return Promise.resolve(
+            jsonErrorResponse(503, 'GitHub App not configured'),
+          );
+        }
+        if (url === '/api/v1/projects' && method === 'GET') {
+          return Promise.resolve(jsonResponse([]));
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+      });
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+        expect(
+          screen.getByText(/github app not configured/i),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('handles creation error', async () => {
+      const user = userEvent.setup();
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        if (url === '/api/v1/github/installations' && method === 'GET') {
+          return Promise.resolve(jsonResponse(sampleInstallations));
+        }
+        if (
+          url === '/api/v1/github/installations/101/repositories' &&
+          method === 'GET'
+        ) {
+          return Promise.resolve(jsonResponse(sampleRepos));
+        }
+        if (url === '/api/v1/projects' && method === 'GET') {
+          return Promise.resolve(jsonResponse([]));
+        }
+        if (url === '/api/v1/projects' && method === 'POST') {
+          return Promise.resolve(
+            jsonErrorResponse(500, 'Failed to create project'),
+          );
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+      });
+
+      renderPage();
+
+      // Navigate through all 3 steps
+      await waitFor(() => {
+        expect(screen.getByText('flux-org')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('flux-org'));
+
+      await waitFor(() => {
+        expect(screen.getByText('flux')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('flux'));
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole('button', { name: /create project/i }),
+        ).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole('button', { name: /create project/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+        expect(
+          screen.getByText(/failed to create project/i),
+        ).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Project list integration', () => {
+    it('existing project list still renders alongside wizard', async () => {
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        if (url === '/api/v1/github/installations' && method === 'GET') {
+          return Promise.resolve(jsonResponse(sampleInstallations));
+        }
+        if (url === '/api/v1/projects' && method === 'GET') {
+          return Promise.resolve(jsonResponse(sampleProjects));
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+      });
+
+      renderPage();
+
+      // The wizard should show installation picker
+      await waitFor(() => {
+        expect(screen.getByText('flux-org')).toBeInTheDocument();
+      });
+
+      // The project list should still render below the wizard
+      const cards = screen.getAllByTestId('project-card');
+      expect(cards).toHaveLength(sampleProjects.length);
+      expect(screen.getByText('flux-core')).toBeInTheDocument();
     });
   });
 });

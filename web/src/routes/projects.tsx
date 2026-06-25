@@ -19,6 +19,7 @@ interface Project {
   definition: ProjectDefinition;
   adapters: unknown[];
   pipelines: unknown[];
+  installation_id: number;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +27,7 @@ interface Project {
 interface CreateProjectInput {
   name: string;
   repo_url: string;
+  installation_id?: number;
 }
 
 // --- Route ---
