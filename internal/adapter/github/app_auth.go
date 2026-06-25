@@ -18,6 +18,23 @@ import (
 // Default GitHub REST API base URL.
 const defaultBaseURL = "https://api.github.com"
 
+// Installation represents a GitHub App installation.
+type Installation struct {
+	ID           int64  `json:"id"`
+	AccountLogin string `json:"account->login"`
+	TargetType   string `json:"target_type"`
+	HTMLURL      string `json:"html_url"`
+}
+
+// InstallationRepository represents a repository accessible via an installation.
+type InstallationRepository struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	FullName string `json:"full_name"`
+	HTMLURL  string `json:"html_url"`
+	Private  bool   `json:"private"`
+}
+
 // AppAuth handles GitHub App authentication. It generates signed JWTs from a
 // private key and exchanges them for short-lived installation access tokens,
 // caching tokens until they are close to expiry.
