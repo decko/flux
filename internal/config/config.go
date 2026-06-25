@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -54,8 +55,9 @@ type SyncConfig struct {
 
 // OrchestratorEntry configures an external pipeline orchestrator.
 type OrchestratorEntry struct {
-	Type      string        `yaml:"type"` // "soda"
-	Path      string        `yaml:"path"` // path to binary
+	Type      string        `yaml:"type"`       // "soda"
+	Path      string        `yaml:"path"`       // path to binary
+	SelfUser  string        `yaml:"self_user"`  // GitHub username of the bot (prevents self-trigger loops)
 	Pipelines []PipelineDef `yaml:"pipelines"`
 }
 
@@ -197,6 +199,11 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("orchestrators[%d].pipelines[%d]: name is required", i, j)
 			}
 		}
+		// Require self_user if the orchestrator has pipelines configured.
+		// This prevents infinite self-trigger loops in automated pipeline triggers.
+		if len(o.Pipelines) > 0 && o.SelfUser == "" {
+			return fmt.Errorf("orchestrators[%d]: self_user is required when pipelines are configured", i)
+		}
 	}
 	if c.Sync.Interval != "" {
 		if _, err := time.ParseDuration(c.Sync.Interval); err != nil {
@@ -204,4 +211,11 @@ func (c *Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+// IsBotActor returns true if the given GitHub actor matches the configured
+// bot user. The comparison is case-insensitive. Returns false if selfUser
+// is empty (bot not configured).
+func IsBotActor(selfUser, actor string) bool {
+	return selfUser != "" && strings.EqualFold(selfUser, actor)
 }

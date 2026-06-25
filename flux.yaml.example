@@ -33,8 +33,11 @@ adapters:
 
 orchestrators:
   # soda pipeline runner. Path defaults to "soda" (looked up in $PATH).
+  # self_user is required when pipelines are configured — it prevents
+  # infinite loops by filtering out events triggered by your own bot.
   - type: soda
     path: soda
+    self_user: flux-bot
     pipelines:
       - name: default
         config: {}

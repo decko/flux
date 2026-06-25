@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/jmoiron/sqlx"
+	_ "modernc.org/sqlite"
 
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/repository"
 )
 
@@ -27,21 +29,19 @@ func TestM6_TrustworthyAudit(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. In-memory database.
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 	defer func() { _ = db.Close() }()
 
-	projectRepo := repository.NewSQLiteProjectRepository(db)
-	auditRepo := repository.NewSQLiteAuditRepository(db)
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
 
-	if err := projectRepo.Migrate(ctx); err != nil {
-		t.Fatalf("migrate projects: %v", err)
-	}
-	if err := auditRepo.Migrate(ctx); err != nil {
-		t.Fatalf("migrate audit: %v", err)
-	}
+	sdb := sqlx.NewDb(db, "sqlite")
+	projectRepo := repository.NewSQLiteProjectRepository(sdb)
+	auditRepo := repository.NewSQLiteAuditRepository(sdb)
 
 	// 2. Create audited project service.
 	auditSvc := domain.NewAuditService(auditRepo)
