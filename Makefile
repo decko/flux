@@ -1,29 +1,22 @@
-.PHONY: build run dev test lint clean frontend backend all migrate seed
+.PHONY: build run dev test lint clean frontend backend migrate seed
 
 BINARY=flux
 GOFLAGS=-trimpath
 LDFLAGS=-s -w
 
-# default target — full production build (frontend + backend)
-all: build
+build: web/dist
+	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/flux
 
-# frontend build — compiles TypeScript/React into web/dist/
-frontend:
-	cd web && bun install && bun run build
-
-# backend build — Go binary WITHOUT embedded frontend (fast iteration)
 backend:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/flux
 
-# full build — frontend FIRST, then backend with embedded SPA
-build: frontend
-	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/flux
+web/dist:
+	cd web && npm install && npm run build
 
 run:
 	./bin/$(BINARY)
 
-# dev — rebuilds frontend first, then hot-runs the backend
-dev: frontend
+dev:
 	go run ./cmd/flux
 
 test:

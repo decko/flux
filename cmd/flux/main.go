@@ -24,15 +24,19 @@ import (
 	"github.com/decko/flux/internal/api"
 	"github.com/decko/flux/internal/config"
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/model"
 	dbMigration "github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/repository"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
-	// Subcommand: "migrate" — apply pending DB migrations and exit.
-	if len(os.Args) > 1 && os.Args[1] == "migrate" {
-		if err := migrateCmd(); err != nil {
-			slog.Error("migrate", "error", err)
+	// Subcommand: "seed" — create an admin user from env vars and exit.
+	if len(os.Args) > 1 && os.Args[1] == "seed" {
+		if err := seedCmd(); err != nil {
+			slog.Error("seed", "error", err)
 			os.Exit(1)
 		}
 		return
@@ -44,10 +48,16 @@ func main() {
 	}
 }
 
-// migrateCmd opens the database, runs all pending migrations, and exits.
-// It only needs the database path from flux.yaml — no other server
-// configuration is required.
-func migrateCmd() error {
+// seedCmd creates an admin user from the FLUX_ADMIN_EMAIL and
+// FLUX_ADMIN_PASSWORD environment variables. If the user already
+// exists, it logs a warning and exits successfully (idempotent).
+func seedCmd() error {
+	email := os.Getenv("FLUX_ADMIN_EMAIL")
+	password := os.Getenv("FLUX_ADMIN_PASSWORD")
+	if email == "" || password == "" {
+		return fmt.Errorf("FLUX_ADMIN_EMAIL and FLUX_ADMIN_PASSWORD must be set")
+	}
+
 	cfg, err := config.Load("flux.yaml")
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -67,7 +77,33 @@ func migrateCmd() error {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
-	slog.Info("migrations complete", "path", cfg.Database.Path)
+	sdb := sqlx.NewDb(db, "sqlite")
+	userRepo := repository.NewSQLiteUserRepository(sdb)
+
+	// Check if the admin user already exists.
+	if _, err := userRepo.GetByEmail(context.Background(), email); err == nil {
+		slog.Info("admin user already exists", "email", email)
+		return nil
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	admin := model.User{
+		ID:           uuid.New().String(),
+		Email:        email,
+		PasswordHash: string(hash),
+		Role:         "admin",
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	if err := userRepo.Create(context.Background(), admin); err != nil {
+		return fmt.Errorf("create admin user: %w", err)
+	}
+
+	slog.Info("admin user created", "email", email)
 	return nil
 }
 
