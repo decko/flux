@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"time"
 
 	"github.com/decko/flux/internal/model"
@@ -69,10 +70,18 @@ func (a *SodaAdapter) Health(ctx context.Context) error {
 
 // Trigger starts a pipeline run by invoking "soda run <ticket>".
 // soda executes asynchronously; this method waits for the command to complete.
+// The ticket ID is validated as a positive integer before execution to prevent
+// argument injection.
 func (a *SodaAdapter) Trigger(ctx context.Context, run model.PipelineRun) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("soda trigger: %w", err)
 	}
+
+	// Validate ticket ID is a positive integer (GitHub issue numbers).
+	if id, err := strconv.ParseInt(run.TicketID, 10, 64); err != nil || id <= 0 {
+		return fmt.Errorf("soda trigger: invalid ticket ID %q: must be a positive integer", run.TicketID)
+	}
+
 	args := []string{"run", run.TicketID}
 	if run.Pipeline != "" {
 		args = append(args, "--pipeline", run.Pipeline)
