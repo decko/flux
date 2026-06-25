@@ -226,7 +226,7 @@ func (a *AppAuth) ListInstallations(ctx context.Context) ([]Installation, error)
 		all = append(all, page...)
 		url = GetNextPageURL(resp)
 	}
-	if pageCount >= maxPages {
+	if url != "" {
 		return nil, fmt.Errorf("list installations: exceeded max pages (%d)", maxPages)
 	}
 
@@ -281,7 +281,7 @@ func (a *AppAuth) ListInstallationRepositories(ctx context.Context, installation
 		all = append(all, envelope.Repositories...)
 		url = GetNextPageURL(resp)
 	}
-	if pageCount >= maxPages {
+	if url != "" {
 		return nil, fmt.Errorf("list installation repos: exceeded max pages (%d)", maxPages)
 	}
 
