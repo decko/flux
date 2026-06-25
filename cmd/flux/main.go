@@ -29,10 +29,46 @@ import (
 )
 
 func main() {
+	// Subcommand: "migrate" — apply pending DB migrations and exit.
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		if err := migrateCmd(); err != nil {
+			slog.Error("migrate", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		slog.Error("flux", "error", err)
 		os.Exit(1)
 	}
+}
+
+// migrateCmd opens the database, runs all pending migrations, and exits.
+// It only needs the database path from flux.yaml — no other server
+// configuration is required.
+func migrateCmd() error {
+	cfg, err := config.Load("flux.yaml")
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer db.Close()
+
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		return fmt.Errorf("configure database: %w", err)
+	}
+
+	if err := dbMigration.Up(db); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	slog.Info("migrations complete", "path", cfg.Database.Path)
+	return nil
 }
 
 func run() error {
