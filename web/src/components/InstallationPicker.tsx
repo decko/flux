@@ -1,93 +1,68 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchInstallations } from '@/api/github';
-import type { GitHubInstallation } from '@/api/github';
+import { fetchInstallations, type GitHubInstallation } from '@/api/github';
 
 export interface InstallationPickerProps {
   onSelect: (installation: GitHubInstallation) => void;
 }
 
 /**
- * InstallationPicker fetches GitHub App installations using TanStack Query
- * and renders them as selectable cards. Supports loading, error, empty, and
- * success states.
+ * InstallationPicker fetches the list of GitHub App installations
+ * and renders them as clickable options.
+ *
+ * Used in the project creation wizard (Step 1) to let the user
+ * choose which GitHub installation to use for repository discovery.
  */
 export function InstallationPicker({ onSelect }: InstallationPickerProps) {
-  const { data, isPending, isError, error } = useQuery({
+  const query = useQuery<GitHubInstallation[]>({
     queryKey: ['github-installations'],
     queryFn: fetchInstallations,
   });
 
-  // --- Loading state ---
-  if (isPending) {
+  if (query.isPending) {
     return (
-      <div
-        role="status"
-        aria-label="Loading installations"
-        className="space-y-3"
-      >
-        {[1, 2].map((i) => (
-          <div
-            key={i}
-            className="animate-pulse rounded-lg border border-gray-200 bg-white p-4"
-          >
-            <div className="h-4 w-1/3 rounded bg-gray-200" />
-            <div className="mt-2 h-3 w-1/4 rounded bg-gray-200" />
-          </div>
-        ))}
+      <div className="text-sm text-gray-500" role="status" aria-label="loading">
+        Loading installations...
       </div>
     );
   }
 
-  // --- Error state ---
-  if (isError) {
-    const message =
-      error instanceof Error ? error.message : String(error);
+  if (query.isError) {
     return (
       <div
         role="alert"
         className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
       >
-        {message}
+        {query.error instanceof Error
+          ? query.error.message
+          : 'Failed to load installations'}
       </div>
     );
   }
 
-  // --- Empty state ---
-  if (data.length === 0) {
+  if (query.data.length === 0) {
     return (
       <div
         role="status"
         className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500"
       >
-        No installations found
+        No GitHub App installations found
       </div>
     );
   }
 
-  // --- Success state ---
   return (
-    <div className="grid gap-3">
-      {data.map((installation) => (
+    <div className="space-y-2">
+      {query.data.map((inst) => (
         <button
-          key={installation.id}
+          key={inst.id}
           type="button"
-          onClick={() => onSelect(installation)}
-          className="w-full cursor-pointer rounded-lg border border-gray-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-blue-400 hover:shadow-md"
+          onClick={() => onSelect(inst)}
+          className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-left text-sm hover:bg-gray-50"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-900">
-              {installation.account.login}
-            </span>
-            <span
-              className={
-                installation.target_type === 'Organization'
-                  ? 'inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700'
-                  : 'inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700'
-              }
-            >
-              {installation.target_type}
-            </span>
-          </div>
+          <span className="font-medium text-gray-900">
+            {inst.account.login}
+          </span>
+          <span className="ml-2 text-gray-500">({inst.target_type})</span>
         </button>
       ))}
     </div>

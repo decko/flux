@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createRoute, redirect } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
+import { InstallationPicker } from '@/components/InstallationPicker';
+import { RepositoryPicker } from '@/components/RepositoryPicker';
+import type { GitHubInstallation, GitHubInstallationRepo } from '@/api/github';
 
 // --- Types matching the Go model (internal/model/project.go) ---
 
@@ -27,7 +30,7 @@ interface Project {
 interface CreateProjectInput {
   name: string;
   repo_url: string;
-  installation_id?: number;
+  installation_id: number;
 }
 
 // --- Route ---
@@ -105,8 +108,13 @@ async function createProject(input: CreateProjectInput): Promise<Project> {
  */
 export function ProjectsPage() {
   const queryClient = useQueryClient();
-  const [name, setName] = useState('');
-  const [repoUrl, setRepoUrl] = useState('');
+
+  // --- Wizard state ---
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [selectedInstallation, setSelectedInstallation] =
+    useState<GitHubInstallation | null>(null);
+  const [selectedRepo, setSelectedRepo] =
+    useState<GitHubInstallationRepo | null>(null);
 
   const query = useQuery<Project[]>({
     queryKey: ['projects'],
@@ -117,15 +125,33 @@ export function ProjectsPage() {
     mutationFn: createProject,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      setName('');
-      setRepoUrl('');
+      setStep(1);
+      setSelectedInstallation(null);
+      setSelectedRepo(null);
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (name.trim() && repoUrl.trim()) {
-      mutation.mutate({ name: name.trim(), repo_url: repoUrl.trim() });
+  const handleSelectInstallation = (inst: GitHubInstallation) => {
+    setSelectedInstallation(inst);
+    setStep(2);
+  };
+
+  const handleSelectRepo = (repo: GitHubInstallationRepo) => {
+    setSelectedRepo(repo);
+    setStep(3);
+  };
+
+  const handleBack = () => {
+    setStep((s) => (s - 1) as 1 | 2 | 3);
+  };
+
+  const handleCreate = () => {
+    if (selectedInstallation && selectedRepo) {
+      mutation.mutate({
+        name: selectedRepo.name,
+        repo_url: selectedRepo.html_url,
+        installation_id: selectedInstallation.id,
+      });
     }
   };
 
@@ -133,64 +159,122 @@ export function ProjectsPage() {
     <div>
       <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
 
-      {/* Create form */}
+      {/* Create Project Wizard */}
       <section className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Create Project</h2>
-        <form onSubmit={handleSubmit} className="mt-4 flex flex-wrap items-end gap-4">
-          <div>
-            <label htmlFor="project-name" className="block text-sm font-medium text-gray-700">
-              Project Name
-            </label>
-            <input
-              id="project-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1 block w-60 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="my-project"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="repo-url" className="block text-sm font-medium text-gray-700">
-              Repo URL
-            </label>
-            <input
-              id="repo-url"
-              type="url"
-              value={repoUrl}
-              onChange={(e) => setRepoUrl(e.target.value)}
-              className="mt-1 block w-80 rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="https://github.com/org/repo"
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {mutation.isPending ? 'Creating...' : 'Create'}
-          </button>
-        </form>
-        {mutation.isError && (
-          <p role="alert" className="mt-2 text-sm text-red-600">
-            {mutation.error instanceof Error ? mutation.error.message : 'Failed to create project'}
-          </p>
-        )}
+        <p className="mt-1 text-sm text-gray-500">
+          {step === 1 && 'Step 1: Select a GitHub App installation'}
+          {step === 2 && 'Step 2: Choose a repository'}
+          {step === 3 && 'Step 3: Confirm project details'}
+        </p>
+
+        <div className="mt-4">
+          {step === 1 && (
+            <InstallationPicker onSelect={handleSelectInstallation} />
+          )}
+
+          {step === 2 && selectedInstallation && (
+            <>
+              <div className="mb-4 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  ← Back
+                </button>
+                <span className="text-sm text-gray-500">
+                  Selected: {selectedInstallation.account.login} (
+                  {selectedInstallation.target_type})
+                </span>
+              </div>
+              <RepositoryPicker
+                installationId={selectedInstallation.id}
+                onSelect={handleSelectRepo}
+              />
+            </>
+          )}
+
+          {step === 3 && selectedRepo && selectedInstallation && (
+            <div>
+              <button
+                type="button"
+                onClick={handleBack}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                ← Back
+              </button>
+
+              <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <dl className="space-y-2">
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500">
+                      Project Name
+                    </dt>
+                    <dd className="text-sm font-semibold text-gray-900">
+                      {selectedRepo.name}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500">
+                      Repository URL
+                    </dt>
+                    <dd className="text-sm text-gray-700">
+                      {selectedRepo.html_url}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-gray-500">
+                      Installation
+                    </dt>
+                    <dd className="text-sm text-gray-700">
+                      {selectedInstallation.account.login} (ID:{' '}
+                      {selectedInstallation.id})
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={mutation.isPending}
+                className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {mutation.isPending ? 'Creating...' : 'Create Project'}
+              </button>
+
+              {mutation.isError && (
+                <p role="alert" className="mt-2 text-sm text-red-600">
+                  {mutation.error instanceof Error
+                    ? mutation.error.message
+                    : 'Failed to create project'}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       </section>
 
-      {/* Project list */}
-      <section className="mt-6 space-y-4">
-        {query.isPending && <ProjectSkeleton />}
-        {query.isError && (
-          <ErrorBanner
-            message={query.error instanceof Error ? query.error.message : String(query.error)}
-          />
-        )}
-        {query.isSuccess && query.data.length === 0 && <EmptyState />}
-        {query.isSuccess && query.data.length > 0 && <ProjectList projects={query.data} />}
-      </section>
+      {/* Project list — hidden during wizard steps 2 and 3 to avoid text conflicts */}
+      {step === 1 && (
+        <section className="mt-6 space-y-4">
+          {query.isPending && <ProjectSkeleton />}
+          {query.isError && (
+            <ErrorBanner
+              message={
+                query.error instanceof Error
+                  ? query.error.message
+                  : String(query.error)
+              }
+            />
+          )}
+          {query.isSuccess && query.data.length === 0 && <EmptyState />}
+          {query.isSuccess && query.data.length > 0 && (
+            <ProjectList projects={query.data} />
+          )}
+        </section>
+      )}
     </div>
   );
 }
