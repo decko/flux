@@ -47,6 +47,8 @@ func (s *Server) registerRoutes() {
 			r.Post("/sync/trigger", s.handleSyncTrigger)
 			r.Get("/adapters", s.handleListAdapters)
 			r.Get("/adapters/{type}/health", s.handleAdapterHealth)
+			r.Get("/github/installations", s.handleGitHubInstallations)
+			r.Get("/github/installations/{id}/repositories", s.handleGitHubInstallationRepositories)
 
 			// Admin-only routes.
 			r.Group(func(r chi.Router) {

@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/decko/flux/internal/adapter/github"
 	"github.com/decko/flux/internal/domain"
 )
 
@@ -28,6 +29,7 @@ type Server struct {
 	syncSvc     syncService
 	syncMu      sync.Mutex
 	adapters    map[string]domain.AdapterInfo
+	appAuth     *github.AppAuth
 }
 
 // ServerOption configures a Server.
@@ -112,6 +114,14 @@ func WithSyncService(svc syncService) ServerOption {
 func WithAdapters(adapters map[string]domain.AdapterInfo) ServerOption {
 	return func(s *Server) {
 		s.adapters = adapters
+	}
+}
+
+// WithAppAuth injects the GitHub App authentication handler for GitHub
+// discovery endpoints (list installations, installation repositories).
+func WithAppAuth(auth *github.AppAuth) ServerOption {
+	return func(s *Server) {
+		s.appAuth = auth
 	}
 }
 

@@ -88,6 +88,20 @@ func NewAppAuth(appID string, privateKeyPEM string) (*AppAuth, error) {
 	}, nil
 }
 
+// SetHTTPClient sets the HTTP client used for GitHub API requests.
+// Must be called before any concurrent use of AppAuth (i.e., during test setup).
+// In production, the default http.Client is used.
+func (a *AppAuth) SetHTTPClient(client *http.Client) {
+	a.httpClient = client
+}
+
+// SetBaseURL sets the base URL for GitHub API requests.
+// Must be called before any concurrent use of AppAuth (i.e., during test setup).
+// In production, the default GitHub API base URL (https://api.github.com) is used.
+func (a *AppAuth) SetBaseURL(url string) {
+	a.baseURL = url
+}
+
 // GetToken returns a valid installation access token for the given GitHub App
 // installation ID. It returns a cached token if one exists and its expiry is
 // more than 5 minutes away; otherwise it generates a new JWT, exchanges it
