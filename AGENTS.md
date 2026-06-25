@@ -11,11 +11,11 @@ gofmt -s -w .
 
 # Frontend (TypeScript/React)
 cd web
-npm install
-npm run typecheck
-npm run lint
-npm run test
-npm run build
+bun install
+bun run typecheck
+bun run lint
+bun run test
+bun run build
 ```
 
 ## Pre-commit Hooks
@@ -31,8 +31,8 @@ Hooks run on `git commit`:
 - `gofmt -l .` - rejects unformatted Go code
 - `golangci-lint run` - rejects lint errors
 - `go test -race ./...` - rejects failing tests
-- `npm run typecheck` (in web/) - rejects type errors
-- `npm run lint` (in web/) - rejects lint errors
+- `bun run typecheck` (in web/) - rejects type errors
+- `bun run lint` (in web/) - rejects lint errors
 
 ## Architecture
 
@@ -130,9 +130,9 @@ Do NOT proceed to PR creation until reviewer agent signs off.
 - [ ] `go test -race ./...` passes (all tests green)
 - [ ] `golangci-lint run` passes
 - [ ] `gofmt -s -d .` shows no changes
-- [ ] `npm run typecheck` passes (in web/)
-- [ ] `npm run lint` passes (in web/)
-- [ ] `npm run test` passes (in web/)
+- [ ] `bun run typecheck` passes (in web/)
+- [ ] `bun run lint` passes (in web/)
+- [ ] `bun run test` passes (in web/)
 - [ ] No new dependencies without justification
 - [ ] No public API signatures changed without approval
 - [ ] All new code has tests (TDD - tests written first)
@@ -235,7 +235,7 @@ If no GitHub issue exists, create one first:
 ```bash
 gh issue create \
   --title "<title>" \
-  --body "## Context\n\n## Acceptance Criteria\n- [ ] Functional test covering the API/domain boundary (not just unit tests)\n- [ ] Tests written before implementation (TDD)\n\n## DoD Checklist\n- [ ] go build\n- [ ] go test -race\n- [ ] golangci-lint\n- [ ] gofmt\n- [ ] npm typecheck\n- [ ] npm lint\n- [ ] npm test\n- [ ] TDD followed\n- [ ] Functional test added\n- [ ] Documentation complete\n- [ ] DoD review passed"
+  --body "## Context\n\n## Acceptance Criteria\n- [ ] Functional test covering the API/domain boundary (not just unit tests)\n- [ ] Tests written before implementation (TDD)\n\n## DoD Checklist\n- [ ] go build\n- [ ] go test -race\n- [ ] golangci-lint\n- [ ] gofmt\n- [ ] bun typecheck\n- [ ] bun lint\n- [ ] bun test\n- [ ] TDD followed\n- [ ] Functional test added\n- [ ] Documentation complete\n- [ ] DoD review passed"
 ```
 
 Then assign it before writing any code.
