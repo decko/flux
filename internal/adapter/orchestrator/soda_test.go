@@ -74,7 +74,7 @@ echo '{"jsonrpc":"2.0","id":1,"result":{"status":"accepted"}}'`
 	a := NewSodaAdapter(sodaPath)
 	run := model.PipelineRun{
 		ID:       "run-1",
-		TicketID: "ticket-1",
+		TicketID: "42",
 		Pipeline: "default",
 	}
 
@@ -230,5 +230,49 @@ echo '{"timestamp":"2025-06-22T10:00:02Z","level":"info","message":"completed"}'
 		if entries[i].Timestamp.IsZero() {
 			t.Errorf("entries[%d].Timestamp is zero", i)
 		}
+	}
+}
+
+// ─── Trigger validation ─────────────────────────────────────────────────────
+
+func TestSodaAdapter_Trigger_InvalidTicketID(t *testing.T) {
+	tests := []struct {
+		name     string
+		ticketID string
+	}{
+		{"empty", ""},
+		{"non-numeric", "issue/42"},
+		{"zero", "0"},
+		{"negative", "-1"},
+		{"alphabetical", "abc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sodaPath := writeSodaScript(t, `exit 0`)
+			a := NewSodaAdapter(sodaPath)
+			run := model.PipelineRun{
+				ID:       "run-1",
+				TicketID: tt.ticketID,
+			}
+
+			err := a.Trigger(context.Background(), run)
+			if err == nil {
+				t.Errorf("expected error for ticket ID %q, got nil", tt.ticketID)
+			}
+		})
+	}
+}
+
+func TestSodaAdapter_Trigger_ValidTicketID(t *testing.T) {
+	sodaPath := writeSodaScript(t, `exit 0`)
+	a := NewSodaAdapter(sodaPath)
+	run := model.PipelineRun{
+		ID:       "run-1",
+		TicketID: "12345",
+	}
+
+	if err := a.Trigger(context.Background(), run); err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
