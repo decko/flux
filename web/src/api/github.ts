@@ -17,15 +17,54 @@ export interface GitHubInstallationRepo {
   private: boolean;
 }
 
-/* ── Stub functions – will be implemented in GREEN phase ── */
-
-export async function fetchInstallations(): Promise<GitHubInstallation[]> {
-  throw new Error('not implemented');
+/** Read JWT token from localStorage (set by login flow). */
+function getToken(): string | null {
+  try {
+    return localStorage.getItem('flux_token');
+  } catch {
+    return null;
+  }
 }
 
+/**
+ * Fetches all GitHub App installations accessible by the authenticated user.
+ * GET /api/v1/github/installations → GitHubInstallation[]
+ */
+export async function fetchInstallations(): Promise<GitHubInstallation[]> {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch('/api/v1/github/installations', { headers });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as Record<string, unknown>).error as string || res.statusText,
+    );
+  }
+  return res.json() as Promise<GitHubInstallation[]>;
+}
+
+/**
+ * Fetches repositories accessible through a specific GitHub App installation.
+ * GET /api/v1/github/installations/:id/repositories → GitHubInstallationRepo[]
+ */
 export async function fetchInstallationRepos(
-  _installationId: number,
+  installationId: number,
 ): Promise<GitHubInstallationRepo[]> {
-  void _installationId;
-  throw new Error('not implemented');
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(
+    `/api/v1/github/installations/${installationId}/repositories`,
+    { headers },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(
+      (body as Record<string, unknown>).error as string || res.statusText,
+    );
+  }
+  return res.json() as Promise<GitHubInstallationRepo[]>;
 }
