@@ -339,8 +339,8 @@ func TestListInstallations_SinglePage(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`[
-			{"id":1,"account->login":"user1","target_type":"User","html_url":"https://github.com/apps/myapp/installations/1"},
-			{"id":2,"account->login":"org1","target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/2"}
+			{"id":1,"account":{"login":"user1"},"target_type":"User","html_url":"https://github.com/apps/myapp/installations/1"},
+			{"id":2,"account":{"login":"org1"},"target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/2"}
 		]`))
 	}))
 	defer srv.Close()
@@ -362,8 +362,8 @@ func TestListInstallations_SinglePage(t *testing.T) {
 	if installations[0].ID != 1 {
 		t.Errorf("installations[0].ID = %d, want 1", installations[0].ID)
 	}
-	if installations[0].AccountLogin != "user1" {
-		t.Errorf("installations[0].AccountLogin = %q, want %q", installations[0].AccountLogin, "user1")
+	if installations[0].Account.Login != "user1" {
+		t.Errorf("installations[0].Account.Login = %q, want %q", installations[0].Account.Login, "user1")
 	}
 	if installations[1].TargetType != "Organization" {
 		t.Errorf("installations[1].TargetType = %q, want %q", installations[1].TargetType, "Organization")
@@ -396,21 +396,21 @@ func TestListInstallations_MultiplePages(t *testing.T) {
 			w.Header().Set("Link", fmt.Sprintf(`<%s/app/installations?page=2>; rel="next"`, nextBase))
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`[
-				{"id":1,"account->login":"user1","target_type":"User","html_url":"https://github.com/apps/myapp/installations/1"},
-				{"id":2,"account->login":"org1","target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/2"}
+				{"id":1,"account":{"login":"user1"},"target_type":"User","html_url":"https://github.com/apps/myapp/installations/1"},
+				{"id":2,"account":{"login":"org1"},"target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/2"}
 			]`))
 		case "2":
 			w.Header().Set("Link", fmt.Sprintf(`<%s/app/installations?page=3>; rel="next"`, nextBase))
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`[
-				{"id":3,"account->login":"user2","target_type":"User","html_url":"https://github.com/apps/myapp/installations/3"},
-				{"id":4,"account->login":"org2","target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/4"}
+				{"id":3,"account":{"login":"user2"},"target_type":"User","html_url":"https://github.com/apps/myapp/installations/3"},
+				{"id":4,"account":{"login":"org2"},"target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/4"}
 			]`))
 		case "3":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`[
-				{"id":5,"account->login":"user3","target_type":"User","html_url":"https://github.com/apps/myapp/installations/5"},
-				{"id":6,"account->login":"org3","target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/6"}
+				{"id":5,"account":{"login":"user3"},"target_type":"User","html_url":"https://github.com/apps/myapp/installations/5"},
+				{"id":6,"account":{"login":"org3"},"target_type":"Organization","html_url":"https://github.com/apps/myapp/installations/6"}
 			]`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -510,28 +510,31 @@ func TestListInstallations_HTTPError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestListInstallationRepositories_SinglePage(t *testing.T) {
-	pemKey, privKey := generateTestKey(t)
+	pemKey, _ := generateTestKey(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/app/installations/install_42/repositories" {
-			t.Errorf("path = %s, want /app/installations/install_42/repositories", r.URL.Path)
+		if r.URL.Path != "/installation/repositories" {
+			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
 		}
 
-		auth := r.Header.Get("Authorization")
-		if !verifyAuthHasJWT(t, auth, privKey) {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer ghs_test_token" {
+			t.Errorf("Authorization = %q, want %q", auth, "Bearer ghs_test_token")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`[
-			{"id":101,"name":"repo-a","full_name":"user1/repo-a","html_url":"https://github.com/user1/repo-a","private":false},
-			{"id":102,"name":"repo-b","full_name":"org1/repo-b","html_url":"https://github.com/org1/repo-b","private":true}
-		]`))
+		_, _ = w.Write([]byte(`{
+			"total_count":2,
+			"repositories":[
+				{"id":101,"name":"repo-a","full_name":"user1/repo-a","html_url":"https://github.com/user1/repo-a","private":false},
+				{"id":102,"name":"repo-b","full_name":"org1/repo-b","html_url":"https://github.com/org1/repo-b","private":true}
+			]
+		}`))
 	}))
 	defer srv.Close()
 
@@ -541,6 +544,10 @@ func TestListInstallationRepositories_SinglePage(t *testing.T) {
 	}
 	a.httpClient = srv.Client()
 	a.baseURL = srv.URL
+	a.cache["install_42"] = &cachedToken{
+		token:     "ghs_test_token",
+		expiresAt: time.Now().Add(10 * time.Minute),
+	}
 
 	repos, err := a.ListInstallationRepositories(context.Background(), "install_42")
 	if err != nil {
@@ -561,18 +568,18 @@ func TestListInstallationRepositories_SinglePage(t *testing.T) {
 }
 
 func TestListInstallationRepositories_MultiplePages(t *testing.T) {
-	pemKey, privKey := generateTestKey(t)
+	pemKey, _ := generateTestKey(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/app/installations/install_42/repositories" {
-			t.Errorf("path = %s, want /app/installations/install_42/repositories", r.URL.Path)
+		if r.URL.Path != "/installation/repositories" {
+			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
 		}
 
-		auth := r.Header.Get("Authorization")
-		if !verifyAuthHasJWT(t, auth, privKey) {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer ghs_test_token" {
+			t.Errorf("Authorization = %q, want %q", auth, "Bearer ghs_test_token")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -583,16 +590,22 @@ func TestListInstallationRepositories_MultiplePages(t *testing.T) {
 		nextBase := fmt.Sprintf("http://%s", r.Host)
 		switch page {
 		case "", "1":
-			w.Header().Set("Link", fmt.Sprintf(`<%s/app/installations/install_42/repositories?page=2>; rel="next"`, nextBase))
+			w.Header().Set("Link", fmt.Sprintf(`<%s/installation/repositories?page=2>; rel="next"`, nextBase))
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[
-				{"id":101,"name":"repo-a","full_name":"user1/repo-a","html_url":"https://github.com/user1/repo-a","private":false}
-			]`))
+			_, _ = w.Write([]byte(`{
+				"total_count":2,
+				"repositories":[
+					{"id":101,"name":"repo-a","full_name":"user1/repo-a","html_url":"https://github.com/user1/repo-a","private":false}
+				]
+			}`))
 		case "2":
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[
-				{"id":102,"name":"repo-b","full_name":"org1/repo-b","html_url":"https://github.com/org1/repo-b","private":true}
-			]`))
+			_, _ = w.Write([]byte(`{
+				"total_count":2,
+				"repositories":[
+					{"id":102,"name":"repo-b","full_name":"org1/repo-b","html_url":"https://github.com/org1/repo-b","private":true}
+				]
+			}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -605,6 +618,10 @@ func TestListInstallationRepositories_MultiplePages(t *testing.T) {
 	}
 	a.httpClient = srv.Client()
 	a.baseURL = srv.URL
+	a.cache["install_42"] = &cachedToken{
+		token:     "ghs_test_token",
+		expiresAt: time.Now().Add(10 * time.Minute),
+	}
 
 	repos, err := a.ListInstallationRepositories(context.Background(), "install_42")
 	if err != nil {
@@ -626,25 +643,25 @@ func TestListInstallationRepositories_MultiplePages(t *testing.T) {
 }
 
 func TestListInstallationRepositories_Empty(t *testing.T) {
-	pemKey, privKey := generateTestKey(t)
+	pemKey, _ := generateTestKey(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
-		if r.URL.Path != "/app/installations/install_42/repositories" {
-			t.Errorf("path = %s, want /app/installations/install_42/repositories", r.URL.Path)
+		if r.URL.Path != "/installation/repositories" {
+			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
 		}
 
-		auth := r.Header.Get("Authorization")
-		if !verifyAuthHasJWT(t, auth, privKey) {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer ghs_test_token" {
+			t.Errorf("Authorization = %q, want %q", auth, "Bearer ghs_test_token")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`[]`))
+		_, _ = w.Write([]byte(`{"total_count":0,"repositories":[]}`))
 	}))
 	defer srv.Close()
 
@@ -654,6 +671,10 @@ func TestListInstallationRepositories_Empty(t *testing.T) {
 	}
 	a.httpClient = srv.Client()
 	a.baseURL = srv.URL
+	a.cache["install_42"] = &cachedToken{
+		token:     "ghs_test_token",
+		expiresAt: time.Now().Add(10 * time.Minute),
+	}
 
 	repos, err := a.ListInstallationRepositories(context.Background(), "install_42")
 	if err != nil {
@@ -668,6 +689,9 @@ func TestListInstallationRepositories_HTTPError(t *testing.T) {
 	pemKey, _ := generateTestKey(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/installation/repositories" {
+			t.Errorf("path = %s, want /installation/repositories", r.URL.Path)
+		}
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"message":"Not found"}`))
 	}))
@@ -679,6 +703,10 @@ func TestListInstallationRepositories_HTTPError(t *testing.T) {
 	}
 	a.httpClient = srv.Client()
 	a.baseURL = srv.URL
+	a.cache["install_42"] = &cachedToken{
+		token:     "ghs_test_token",
+		expiresAt: time.Now().Add(10 * time.Minute),
+	}
 
 	_, err = a.ListInstallationRepositories(context.Background(), "install_42")
 	if err == nil {
