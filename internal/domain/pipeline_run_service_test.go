@@ -66,6 +66,19 @@ func (r *mockPipelineRunRepo) Update(_ context.Context, run model.PipelineRun) e
 	return nil
 }
 
+func (r *mockPipelineRunRepo) HasActiveRun(_ context.Context, projectID, ticketID string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, run := range r.store {
+		if run.ProjectID == projectID && run.TicketID == ticketID {
+			if run.Status == model.RunStatusPending || run.Status == model.RunStatusRunning {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 // ─── Stub: OrchestratorAdapter ──────────────────────────────────────────────
 
 type stubOrchestrator struct {

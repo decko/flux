@@ -299,6 +299,21 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	}
 	syncSvc := domain.NewSyncService(ticketRepo, prRepo, projectRepo, factory, syncInterval)
 
+	// Wire trigger service if self_user is configured.
+	for _, o := range cfg.Orchestrators {
+		if o.SelfUser != "" {
+			triggerSvc := domain.NewTriggerService(
+				pipelineSvc,
+				projectRepo,
+				pipelineRepo,
+				o.SelfUser,
+			)
+			syncSvc.WithTriggerService(triggerSvc)
+			slog.Info("auto-trigger enabled", "self_user", o.SelfUser)
+			break
+		}
+	}
+
 	// Start background sync loop.
 	go syncSvc.Run(ctx)
 

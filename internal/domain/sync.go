@@ -50,9 +50,10 @@ type SyncService struct {
 	// ProjectRepo is the repository for persisting projects.
 	ProjectRepo repository.ProjectRepository
 	// Factory creates per-project adapters for sync.
-	Factory  AdapterFactory
-	interval time.Duration
-	logger   *slog.Logger
+	Factory    AdapterFactory
+	triggerSvc *TriggerService
+	interval   time.Duration
+	logger     *slog.Logger
 
 	mu      sync.Mutex
 	status  SyncStatus
@@ -96,6 +97,13 @@ func NewSyncService(
 			Projects: make(map[string]ProjectSyncStatus),
 		},
 	}
+}
+
+// WithTriggerService sets the TriggerService for automatic pipeline
+// triggering after each sync pass. When set, tickets and PRs are
+// evaluated against trigger rules after they are upserted.
+func (s *SyncService) WithTriggerService(svc *TriggerService) {
+	s.triggerSvc = svc
 }
 
 // Status returns the result of the last sync operation. It is safe
@@ -309,6 +317,15 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 					} else {
 						ticketCount++
 					}
+				}
+			}
+		}
+
+		// Trigger pipelines for newly synced tickets.
+		if s.triggerSvc != nil {
+			for _, t := range tickets {
+				if err := s.triggerSvc.CheckAndTrigger(ctx, t); err != nil {
+					s.logger.Warn("trigger check for ticket failed", "ticket_id", t.ID, "err", err)
 				}
 			}
 		}
