@@ -11,7 +11,7 @@ backend:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/flux
 
 web/dist:
-	cd web && npm install && npm run build
+	cd web && bun install && bun run build
 
 run:
 	./bin/$(BINARY)
