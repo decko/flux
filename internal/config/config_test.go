@@ -821,3 +821,101 @@ func checkNoTokenField(t *testing.T, v any) {
 		}
 	}
 }
+
+// ─── Orchestrator self_user validation ──────────────────────────────────────
+
+func TestConfig_Validate_OrchestratorMissingSelfUser(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Orchestrators: []OrchestratorEntry{
+			{
+				Type: "soda",
+				Pipelines: []PipelineDef{
+					{Name: "review"},
+				},
+				// SelfUser intentionally empty
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected error for missing self_user with pipelines, got nil")
+	}
+}
+
+func TestConfig_Validate_OrchestratorWithSelfUser(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Orchestrators: []OrchestratorEntry{
+			{
+				Type:     "soda",
+				SelfUser: "flux-bot",
+				Pipelines: []PipelineDef{
+					{Name: "review"},
+				},
+			},
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestConfig_Validate_OrchestratorNoPipelinesNoSelfUser(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Server:   ServerConfig{Port: 8080},
+		Database: DatabaseConfig{Path: ":memory:"},
+		CORS:     CORSConfig{Origin: "*"},
+		Logging:  LoggingConfig{Level: "info"},
+		Orchestrators: []OrchestratorEntry{
+			{
+				Type: "soda",
+				// No pipelines, no self_user — ok
+			},
+		},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ─── IsBotActor ──────────────────────────────────────────────────────────────
+
+func TestIsBotActor_Match(t *testing.T) {
+	if !IsBotActor("flux-bot", "flux-bot") {
+		t.Error("IsBotActor should match identical strings")
+	}
+}
+
+func TestIsBotActor_CaseInsensitive(t *testing.T) {
+	if !IsBotActor("Flux-Bot", "flux-bot") {
+		t.Error("IsBotActor should be case-insensitive")
+	}
+}
+
+func TestIsBotActor_DifferentActor(t *testing.T) {
+	if IsBotActor("flux-bot", "decko") {
+		t.Error("IsBotActor should not match different actor")
+	}
+}
+
+func TestIsBotActor_EmptySelfUser(t *testing.T) {
+	if IsBotActor("", "flux-bot") {
+		t.Error("IsBotActor with empty selfUser should return false")
+	}
+}
