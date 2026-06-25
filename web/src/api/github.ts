@@ -17,6 +17,22 @@ export interface GitHubInstallationRepo {
   private: boolean;
 }
 
+/**
+ * Safely extracts an error message from an unknown response body.
+ * Returns a string if body has a valid `error` property, otherwise null.
+ */
+function extractErrorMessage(body: unknown): string | null {
+  if (
+    typeof body === 'object' &&
+    body !== null &&
+    'error' in body &&
+    typeof (body as { error: unknown }).error === 'string'
+  ) {
+    return (body as { error: string }).error;
+  }
+  return null;
+}
+
 /** Read JWT token from localStorage (set by login flow). */
 function getToken(): string | null {
   try {
@@ -39,7 +55,7 @@ export async function fetchInstallations(): Promise<GitHubInstallation[]> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
-      (body as Record<string, unknown>).error as string || res.statusText,
+      extractErrorMessage(body) ?? res.statusText,
     );
   }
   return res.json() as Promise<GitHubInstallation[]>;
@@ -63,7 +79,7 @@ export async function fetchInstallationRepos(
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
-      (body as Record<string, unknown>).error as string || res.statusText,
+      extractErrorMessage(body) ?? res.statusText,
     );
   }
   return res.json() as Promise<GitHubInstallationRepo[]>;

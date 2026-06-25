@@ -63,6 +63,7 @@ describe('fetchInstallations', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   it('returns installations on success', async () => {
@@ -83,6 +84,20 @@ describe('fetchInstallations', () => {
     );
   });
 
+  it('sends Authorization header when token is present', async () => {
+    localStorage.setItem('flux_token', 'test-token');
+    mockFetch.mockResolvedValue(jsonResponse(sampleInstallations));
+
+    await fetchInstallations();
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/github/installations', {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer test-token',
+      },
+    });
+  });
+
   it('throws on network error', async () => {
     mockFetch.mockRejectedValue(new Error('Network Error'));
 
@@ -100,6 +115,7 @@ describe('fetchInstallationRepos', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   it('returns repos on success', async () => {

@@ -3,13 +3,13 @@ import { fetchInstallationRepos } from '@/api/github';
 import type { GitHubInstallationRepo } from '@/api/github';
 
 export interface RepositoryPickerProps {
-  installationId: string;
+  installationId: number;
   onSelect: (repo: GitHubInstallationRepo) => void;
 }
 
 /**
  * RepositoryPicker fetches repositories for a given GitHub App installation
- * using TanStack Query and renders them as a selectable, filterable list.
+ * using TanStack Query and renders them as a selectable list.
  * Supports loading, error, empty, and success states.
  */
 export function RepositoryPicker({
@@ -18,7 +18,8 @@ export function RepositoryPicker({
 }: RepositoryPickerProps) {
   const { data, isPending, isError, error } = useQuery({
     queryKey: ['github-repos', installationId],
-    queryFn: () => fetchInstallationRepos(Number(installationId)),
+    queryFn: () => fetchInstallationRepos(installationId),
+    enabled: installationId > 0,
   });
 
   // --- Loading state ---

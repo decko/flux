@@ -27,7 +27,7 @@ function createWrapper() {
 }
 
 function renderPicker(
-  installationId: string,
+  installationId: number,
   onSelect?: (repo: GitHubInstallationRepo) => void,
 ) {
   const wrapper = createWrapper();
@@ -95,7 +95,7 @@ describe('RepositoryPicker', () => {
   it('renders loading state while fetching', () => {
     mockFetch.mockReturnValue(new Promise(() => {}));
 
-    renderPicker('101');
+    renderPicker(101);
 
     const skeleton = screen.getByRole('status', { name: /loading/i });
     expect(skeleton).toBeInTheDocument();
@@ -104,9 +104,17 @@ describe('RepositoryPicker', () => {
   it('does not show empty state while loading', () => {
     mockFetch.mockReturnValue(new Promise(() => {}));
 
-    renderPicker('101');
+    renderPicker(101);
 
     expect(screen.queryByText(/no repositories found/i)).toBeNull();
+  });
+
+  // --- Invalid ID guard ---
+
+  it('does not fetch when installationId is zero or negative', () => {
+    renderPicker(0);
+
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   // --- Success state ---
@@ -114,13 +122,14 @@ describe('RepositoryPicker', () => {
   it('renders repository list on success', async () => {
     mockFetch.mockResolvedValue(jsonResponse(sampleRepos));
 
-    renderPicker('101');
+    renderPicker(101);
 
     await waitFor(() => {
       expect(screen.getByText('flux')).toBeInTheDocument();
       expect(screen.getByText('flux-org/flux')).toBeInTheDocument();
       expect(screen.getByText('web-app')).toBeInTheDocument();
       expect(screen.getByText('flux-org/web-app')).toBeInTheDocument();
+      expect(screen.getByText('Private')).toBeInTheDocument();
     });
   });
 
@@ -129,7 +138,7 @@ describe('RepositoryPicker', () => {
     const onSelect = vi.fn();
     mockFetch.mockResolvedValue(jsonResponse(sampleRepos));
 
-    renderPicker('101', onSelect);
+    renderPicker(101, onSelect);
 
     await waitFor(() => {
       expect(screen.getByText('flux')).toBeInTheDocument();
@@ -148,7 +157,7 @@ describe('RepositoryPicker', () => {
       jsonErrorResponse(500, 'Internal Server Error'),
     );
 
-    renderPicker('101');
+    renderPicker(101);
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument();
@@ -161,7 +170,7 @@ describe('RepositoryPicker', () => {
   it('renders empty state when no repos', async () => {
     mockFetch.mockResolvedValue(jsonResponse([]));
 
-    renderPicker('101');
+    renderPicker(101);
 
     await waitFor(() => {
       expect(
@@ -177,7 +186,7 @@ describe('RepositoryPicker', () => {
       jsonErrorResponse(503, 'GitHub App not configured'),
     );
 
-    renderPicker('101');
+    renderPicker(101);
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument();
