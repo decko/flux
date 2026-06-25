@@ -25,9 +25,9 @@ go test -race -short ./...
 # Frontend checks (if web/ has changes)
 if git diff --cached --name-only | grep -q "^web/"; then
     echo "==> Running frontend typecheck..."
-    cd web && npm run typecheck
+    cd web && bun run typecheck
     echo "==> Running frontend lint..."
-    npm run lint
+    bun run lint
 fi
 
 echo "==> All checks passed."

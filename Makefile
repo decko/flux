@@ -1,4 +1,4 @@
-.PHONY: build run dev test lint clean frontend backend all migrate
+.PHONY: build run dev test lint clean frontend backend all migrate seed
 
 BINARY=flux
 GOFLAGS=-trimpath
@@ -9,7 +9,7 @@ all: build
 
 # frontend build — compiles TypeScript/React into web/dist/
 frontend:
-	cd web && npm install && npm run build
+	cd web && bun install && bun run build
 
 # backend build — Go binary WITHOUT embedded frontend (fast iteration)
 backend:
@@ -37,3 +37,6 @@ clean:
 
 migrate:
 	go run ./cmd/flux migrate
+
+seed:
+	go run ./cmd/flux seed
