@@ -274,3 +274,54 @@ func TestHandleGitHubInstallationRepos_AppNotConfigured(t *testing.T) {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
 	}
 }
+
+func TestHandleGitHubInstallations_APIError(t *testing.T) {
+	mockGH, srv := setupGitHubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"Internal Server Error"}`))
+	})
+	defer mockGH.Close()
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	req := authedRequest(http.MethodGet, ts.URL+"/api/v1/github/installations", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/github/installations: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadGateway)
+	}
+}
+
+func TestHandleGitHubInstallationRepos_APIError(t *testing.T) {
+	mockGH, srv := setupGitHubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Token exchange succeeds.
+		if r.URL.Path == "/app/installations/42/access_tokens" && r.Method == http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"token":"ghs_test_token","expires_at":"2099-01-01T00:00:00Z"}`))
+			return
+		}
+		// Repos endpoint fails.
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	defer mockGH.Close()
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	req := authedRequest(http.MethodGet, ts.URL+"/api/v1/github/installations/42/repositories", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/github/installations/42/repositories: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadGateway)
+	}
+}

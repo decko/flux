@@ -2,11 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/decko/flux/internal/adapter/github"
 )
 
 // handleGitHubInstallations returns the list of GitHub App installations.
@@ -19,8 +22,13 @@ func (s *Server) handleGitHubInstallations(w http.ResponseWriter, r *http.Reques
 
 	installations, err := s.appAuth.ListInstallations(r.Context())
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error(), middleware.GetReqID(r.Context()))
+		slog.Error("list installations failed", "error", err)
+		writeJSONError(w, http.StatusBadGateway, "GitHub API error", middleware.GetReqID(r.Context()))
 		return
+	}
+
+	if installations == nil {
+		installations = []github.Installation{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -46,10 +54,15 @@ func (s *Server) handleGitHubInstallationRepositories(w http.ResponseWriter, r *
 		return
 	}
 
-	repos, err := s.appAuth.ListInstallationRepositories(r.Context(), idStr)
+	repos, err := s.appAuth.ListInstallationRepositories(r.Context(), strconv.FormatInt(id, 10))
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error(), middleware.GetReqID(r.Context()))
+		slog.Error("list installation repos failed", "error", err)
+		writeJSONError(w, http.StatusBadGateway, "GitHub API error", middleware.GetReqID(r.Context()))
 		return
+	}
+
+	if repos == nil {
+		repos = []github.InstallationRepository{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

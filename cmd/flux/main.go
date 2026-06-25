@@ -257,6 +257,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithSyncService(syncSvc),
 		api.WithAdapters(buildAdapterMap(cfg.Adapters)),
 		api.WithAuditService(auditSvc),
+		api.WithAppAuth(appAuth),
 		api.WithSPA(),
 	)
 
