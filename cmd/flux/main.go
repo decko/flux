@@ -307,6 +307,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 				projectRepo,
 				pipelineRepo,
 				o.SelfUser,
+				domain.WithTriggerRules(o.TriggerRules),
 			)
 			syncSvc.WithTriggerService(triggerSvc)
 			slog.Info("auto-trigger enabled", "self_user", o.SelfUser)
