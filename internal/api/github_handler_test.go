@@ -53,6 +53,9 @@ func setupGitHubServer(t *testing.T, mockHandler http.HandlerFunc) (*httptest.Se
 		mockGH.Close()
 		t.Fatalf("NewAppAuth: %v", err)
 	}
+	// Wire mock server into AppAuth.
+	appAuth.SetHTTPClient(mockGH.Client())
+	appAuth.SetBaseURL(mockGH.URL)
 
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes), WithAppAuth(appAuth))
 	return mockGH, srv
@@ -155,6 +158,13 @@ func TestHandleGitHubInstallations_AppNotConfigured(t *testing.T) {
 
 func TestHandleGitHubInstallationRepos_Success(t *testing.T) {
 	mockGH, srv := setupGitHubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// Handle access token exchange (called by AppAuth.GetToken before listing repos).
+		if r.Method == http.MethodPost && r.URL.Path == "/app/installations/42/access_tokens" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"token":"mock-installation-token","expires_at":"2026-12-31T23:59:59Z"}`))
+			return
+		}
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
