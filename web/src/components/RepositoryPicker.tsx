@@ -22,6 +22,18 @@ export function RepositoryPicker({
     enabled: installationId > 0,
   });
 
+  // --- Invalid ID guard — prevent infinite loading skeleton ---
+  if (installationId <= 0) {
+    return (
+      <div
+        role="status"
+        className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500"
+      >
+        Select a GitHub App installation to see repositories
+      </div>
+    );
+  }
+
   // --- Loading state ---
   if (isPending) {
     return (

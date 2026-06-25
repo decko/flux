@@ -115,6 +115,9 @@ describe('RepositoryPicker', () => {
     renderPicker(0);
 
     expect(mockFetch).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/select a github app installation/i),
+    ).toBeInTheDocument();
   });
 
   // --- Success state ---
