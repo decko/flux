@@ -7,6 +7,17 @@ set -e
 # Ensure go binaries are on PATH
 export PATH="$(go env GOPATH)/bin:$PATH"
 
+echo "==> Running gitleaks..."
+if command -v gitleaks &> /dev/null; then
+    gitleaks protect --staged --no-banner -v 2>&1 || {
+        echo "ERROR: gitleaks detected secrets in staged files."
+        exit 1
+    }
+else
+    echo "WARNING: gitleaks not installed. Skipping secret scan."
+    echo "Install: go install github.com/zricethezav/gitleaks/v8@latest"
+fi
+
 echo "==> Running gofmt..."
 unformatted=$(gofmt -l .)
 if [ -n "$unformatted" ]; then
