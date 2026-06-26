@@ -132,3 +132,105 @@ func TestSQLiteUserRepo_GetByID_NotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestSQLiteUserRepo_List(t *testing.T) {
+	repo := setupUserTestDB(t)
+	ctx := context.Background()
+
+	users := []model.User{
+		testUser("u1", "alice@example.com", "admin"),
+		testUser("u2", "bob@example.com", "user"),
+		testUser("u3", "carol@example.com", "user"),
+	}
+	for _, u := range users {
+		must(t, repo.Create(ctx, u))
+	}
+
+	// List is not implemented yet — this will fail (RED).
+	got, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(got) != len(users) {
+		t.Errorf("got %d users, want %d", len(got), len(users))
+	}
+}
+
+func TestSQLiteUserRepo_Delete(t *testing.T) {
+	repo := setupUserTestDB(t)
+	ctx := context.Background()
+
+	u := testUser("user-1", "delete@example.com", "user")
+	must(t, repo.Create(ctx, u))
+
+	// Delete is not implemented yet — this will fail (RED).
+	must(t, repo.Delete(ctx, "user-1"))
+
+	_, err := repo.GetByID(ctx, "user-1")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestSQLiteUserRepo_Delete_NotFound(t *testing.T) {
+	repo := setupUserTestDB(t)
+	ctx := context.Background()
+
+	err := repo.Delete(ctx, "nonexistent")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSQLiteUserRepo_Count(t *testing.T) {
+	repo := setupUserTestDB(t)
+	ctx := context.Background()
+
+	users := []model.User{
+		testUser("u1", "alice@example.com", "admin"),
+		testUser("u2", "bob@example.com", "user"),
+	}
+	for _, u := range users {
+		must(t, repo.Create(ctx, u))
+	}
+
+	// Count is not implemented yet — this will fail (RED).
+	count, err := repo.Count(ctx)
+	if err != nil {
+		t.Fatalf("Count returned error: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("got count %d, want %d", count, 2)
+	}
+}
+
+func TestSQLiteUserRepo_CountByRole(t *testing.T) {
+	repo := setupUserTestDB(t)
+	ctx := context.Background()
+
+	users := []model.User{
+		testUser("u1", "admin1@example.com", "admin"),
+		testUser("u2", "admin2@example.com", "admin"),
+		testUser("u3", "user1@example.com", "user"),
+	}
+	for _, u := range users {
+		must(t, repo.Create(ctx, u))
+	}
+
+	// CountByRole is not implemented yet — this will fail (RED).
+	adminCount, err := repo.CountByRole(ctx, "admin")
+	if err != nil {
+		t.Fatalf("CountByRole(admin) returned error: %v", err)
+	}
+	if adminCount != 2 {
+		t.Errorf("got admin count %d, want %d", adminCount, 2)
+	}
+
+	userCount, err := repo.CountByRole(ctx, "user")
+	if err != nil {
+		t.Fatalf("CountByRole(user) returned error: %v", err)
+	}
+	if userCount != 1 {
+		t.Errorf("got user count %d, want %d", userCount, 1)
+	}
+}
