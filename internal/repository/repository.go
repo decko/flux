@@ -212,4 +212,8 @@ type UserRepository interface {
 	// GetByID retrieves a user by ID. Returns ErrNotFound if no user
 	// with the given ID exists.
 	GetByID(ctx context.Context, id string) (model.User, error)
+
+	// Update modifies an existing user. Returns ErrNotFound if no user
+	// with the given ID exists.
+	Update(ctx context.Context, user model.User) error
 }

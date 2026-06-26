@@ -94,6 +94,29 @@ func (r *SQLiteUserRepository) GetByID(ctx context.Context, id string) (model.Us
 	return user, nil
 }
 
+// Update modifies an existing user's mutable fields: email, password_hash,
+// and role. Returns ErrNotFound if no user with the given ID exists.
+func (r *SQLiteUserRepository) Update(ctx context.Context, user model.User) error {
+	query := `UPDATE users SET email = ?, password_hash = ?, role = ? WHERE id = ?`
+	result, err := r.db.ExecContext(ctx, query,
+		user.Email,
+		user.PasswordHash,
+		user.Role,
+		user.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating user: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // isUniqueConstraintViolation checks if the error is a SQLite UNIQUE
 // constraint violation (error code 19, constraint UNIQUE).
 func isUniqueConstraintViolation(err error) bool {

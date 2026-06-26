@@ -59,6 +59,16 @@ func (r *mockUserRepo) GetByID(_ context.Context, id string) (model.User, error)
 	return u, nil
 }
 
+func (r *mockUserRepo) Update(_ context.Context, u model.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.store[u.ID]; !exists {
+		return repository.ErrNotFound
+	}
+	r.store[u.ID] = u
+	return nil
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────
 
 func TestAuthService_Register(t *testing.T) {
