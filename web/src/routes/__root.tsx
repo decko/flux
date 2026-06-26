@@ -24,6 +24,18 @@ function RootLayout() {
   const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
 
+  // Check if the current user is an admin.
+  const isAdmin = (() => {
+    try {
+      const token = localStorage.getItem('flux_token');
+      if (!token) return false;
+      const payload = JSON.parse(atob(token.split('.')[1]!));
+      return payload.role === 'admin';
+    } catch {
+      return false;
+    }
+  })();
+
   function handleLogout() {
     logout();
     navigate({ to: '/login', search: { redirect: undefined } });
@@ -47,7 +59,16 @@ function RootLayout() {
                 {item.label}
               </Link>
             ))}
-            <span className="border-l border-gray-200 pl-6">
+              <span className="border-l border-gray-200 pl-6">
+              {isAdmin && (
+                <Link
+                  to="/admin/users"
+                  activeProps={{ className: 'text-blue-600 font-semibold' }}
+                  className="mr-4 text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
+                >
+                  Admin
+                </Link>
+              )}
               {isAuthenticated ? (
                 <button
                   type="button"
@@ -100,6 +121,16 @@ function RootLayout() {
                   {item.label}
                 </Link>
               ))}
+              {isAdmin && (
+                <Link
+                  to="/admin/users"
+                  activeProps={{ className: 'text-blue-600 font-semibold' }}
+                  className="block text-sm text-gray-600 transition-colors duration-150 hover:text-gray-900"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Admin
+                </Link>
+              )}
               {isAuthenticated ? (
                 <button
                   type="button"
