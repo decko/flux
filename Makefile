@@ -43,3 +43,6 @@ seed:
 
 set-password:
 	go run ./cmd/flux user set-password
+
+user-add:
+	go run ./cmd/flux user add
