@@ -200,6 +200,7 @@ type TriggerRuleRepository interface {
 }
 
 // WebhookSecretRepository defines the contract for webhook secret persistence.
+<<<<<<< HEAD
 // Secrets are stored per project and are used to validate incoming webhook
 // payloads from GitHub.
 type WebhookSecretRepository interface {
@@ -213,6 +214,21 @@ type WebhookSecretRepository interface {
 	// Delete removes the webhook secret for the given project ID.
 	// Returns nil if no secret exists (idempotent delete).
 	Delete(ctx context.Context, projectID string) error
+=======
+// Secrets are keyed by repo URL (e.g., "https://github.com/owner/repo") and
+// used to verify GitHub webhook HMAC-SHA256 signatures.
+type WebhookSecretRepository interface {
+	// Get retrieves the webhook secret for a given repo URL.
+	// Returns ErrNotFound if no secret exists for the repo URL.
+	Get(ctx context.Context, repoURL string) (string, error)
+
+	// Set stores or updates the webhook secret for a given repo URL.
+	Set(ctx context.Context, repoURL, secret string) error
+
+	// Delete removes the webhook secret for a given repo URL.
+	// Returns ErrNotFound if no secret exists for the repo URL.
+	Delete(ctx context.Context, repoURL string) error
+>>>>>>> origin/main
 }
 
 // UserRepository defines the contract for user persistence.

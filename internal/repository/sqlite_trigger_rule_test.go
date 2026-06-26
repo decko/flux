@@ -48,6 +48,7 @@ func testTriggerRule(id, projectID, label, pipeline string, enabled bool, priori
 		Pipeline:  pipeline,
 		Enabled:   enabled,
 		Priority:  priority,
+		Event:     model.DefaultEvent,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

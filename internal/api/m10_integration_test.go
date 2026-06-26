@@ -88,7 +88,7 @@ func TestM10_UI_PipelineTriggerManagement(t *testing.T) {
 		Status:    model.TicketStatusOpen,
 	}
 
-	if err := triggerSvc.CheckAndTrigger(ctx, ticket); err != nil {
+	if err := triggerSvc.CheckAndTrigger(ctx, ticket, model.DefaultEvent); err != nil {
 		t.Fatalf("CheckAndTrigger: %v", err)
 	}
 
@@ -107,7 +107,7 @@ func TestM10_UI_PipelineTriggerManagement(t *testing.T) {
 		ProjectID: "proj-m10",
 		Labels:    []string{"bug"},
 	}
-	if err := triggerSvc.CheckAndTrigger(ctx, noMatch); err != nil {
+	if err := triggerSvc.CheckAndTrigger(ctx, noMatch, model.DefaultEvent); err != nil {
 		t.Fatalf("no-match check: %v", err)
 	}
 	runs, _ = pipelineRepo.List(ctx, repository.PipelineRunFilter{ProjectID: "proj-m10"})
@@ -119,7 +119,7 @@ func TestM10_UI_PipelineTriggerManagement(t *testing.T) {
 	if err := ruleRepo.Delete(ctx, rule.ID); err != nil {
 		t.Fatalf("delete rule: %v", err)
 	}
-	if err := triggerSvc.CheckAndTrigger(ctx, ticket); err != nil {
+	if err := triggerSvc.CheckAndTrigger(ctx, ticket, model.DefaultEvent); err != nil {
 		t.Fatalf("post-delete trigger: %v", err)
 	}
 	runs, _ = pipelineRepo.List(ctx, repository.PipelineRunFilter{ProjectID: "proj-m10"})

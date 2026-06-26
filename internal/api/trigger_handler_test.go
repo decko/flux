@@ -86,6 +86,7 @@ func seedTriggerRule(t *testing.T, srv *Server, projectID string) model.TriggerR
 		ProjectID: projectID,
 		Label:     "bug",
 		Pipeline:  "dev-loop",
+		Event:     model.DefaultEvent,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}
