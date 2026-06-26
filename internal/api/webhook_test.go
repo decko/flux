@@ -120,6 +120,7 @@ func setupWebhookTestServer(t *testing.T) *Server {
 	ticketRepo := repository.NewSQLiteTicketRepository(sdb)
 	pipelineRepo := repository.NewSQLitePipelineRunRepository(sdb)
 	triggerRepo := repository.NewSQLiteTriggerRuleRepository(sdb)
+	webhookSecretRepo := repository.NewSQLiteWebhookSecretRepository(sdb)
 
 	projectSvc := domain.NewProjectService(projectRepo)
 	ticketSvc := domain.NewTicketService(ticketRepo)
@@ -131,6 +132,7 @@ func setupWebhookTestServer(t *testing.T) *Server {
 		WithTicketService(ticketSvc),
 		WithPipelineService(pipelineSvc),
 		WithTriggerRuleRepo(triggerRepo),
+		WithWebhookSecretRepo(webhookSecretRepo),
 	)
 }
 
