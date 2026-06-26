@@ -172,6 +172,12 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If core services aren't wired, skip processing gracefully.
+	if s.projectSvc == nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	// Find the project by repo URL.
 	projects, err := s.projectSvc.List(r.Context(), repository.ProjectFilter{})
 	if err != nil {
@@ -294,6 +300,9 @@ func (s *Server) handlePushEvent(w http.ResponseWriter, r *http.Request, project
 // run is created. Rules with an empty event match any event type (backward
 // compatibility).
 func (s *Server) triggerForTicket(ctx context.Context, project *model.Project, ticket model.Ticket, eventType string) {
+	if s.triggerRuleRepo == nil || s.pipelineSvc == nil {
+		return
+	}
 	rules, err := s.triggerRuleRepo.ListByProject(ctx, project.ID)
 	if err != nil {
 		slog.Error("webhook: failed to list trigger rules", "error", err, "project_id", project.ID)

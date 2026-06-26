@@ -34,10 +34,8 @@ type Server struct {
 	appAuth           *github.AppAuth
 	triggerRuleRepo   repository.TriggerRuleRepository
 	webhookSecretRepo repository.WebhookSecretRepository
-<<<<<<< HEAD
-=======
 	webhookCreator    *domain.WebhookCreator
->>>>>>> origin/main
+
 }
 
 // ServerOption configures a Server.
@@ -148,30 +146,24 @@ func WithTriggerRuleRepo(repo repository.TriggerRuleRepository) ServerOption {
 	}
 }
 
-<<<<<<< HEAD
+
 // WithWebhookSecretRepo injects the webhook secret repository for webhook
 // secret management (used during project deletion and webhook lifecycle).
-=======
-// WithWebhookSecretRepo injects the webhook secret repository used by the
-// GitHub webhook handler to verify HMAC-SHA256 signatures.
->>>>>>> origin/main
 func WithWebhookSecretRepo(repo repository.WebhookSecretRepository) ServerOption {
 	return func(s *Server) {
 		s.webhookSecretRepo = repo
 	}
 }
 
-<<<<<<< HEAD
-=======
-// WithWebhookCreator injects the webhook creator for automatic webhook
-// registration when projects are created.
-func WithWebhookCreator(wc *domain.WebhookCreator) ServerOption {
+// WithWebhookCreator injects the webhook creator for automatic
+// webhook registration on project creation.
+func WithWebhookCreator(c *domain.WebhookCreator) ServerOption {
 	return func(s *Server) {
-		s.webhookCreator = wc
+		s.webhookCreator = c
 	}
 }
 
->>>>>>> origin/main
+
 // NewServer creates a new Server with all middleware and routes registered.
 // Middleware order: ErrorHandler (outermost, catches panics in all downstream middleware) →
 // RequestID → Logger → CORS

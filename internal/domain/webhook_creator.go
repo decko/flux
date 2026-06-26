@@ -119,7 +119,7 @@ func (c *WebhookCreator) CreateForProject(ctx context.Context, project model.Pro
 	webhookID, err := github.RegisterWebhook(
 		ctx,
 		c.appAuth,
-		fmt.Sprintf("%d", project.InstallationID),
+		project.InstallationID,
 		owner,
 		repo,
 		webhookURL,

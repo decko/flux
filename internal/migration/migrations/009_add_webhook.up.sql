@@ -1,7 +1,0 @@
-ALTER TABLE projects ADD COLUMN webhook_id INTEGER NOT NULL DEFAULT 0;
-
-CREATE TABLE IF NOT EXISTS webhook_secrets (
-    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-    secret TEXT NOT NULL,
-    created_at DATETIME NOT NULL
-);
