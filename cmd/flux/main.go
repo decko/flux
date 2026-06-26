@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -11,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,10 +36,19 @@ import (
 )
 
 func main() {
-	// Subcommand: "seed" — create an admin user from env vars and exit.
+	// Subcommand: "seed" — create admin user (--email, --password-file/--password-stdin).
 	if len(os.Args) > 1 && os.Args[1] == "seed" {
 		if err := seedCmd(); err != nil {
 			slog.Error("seed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Subcommand: "user" — user management subcommands.
+	if len(os.Args) > 1 && os.Args[1] == "user" {
+		if err := userCmd(); err != nil {
+			slog.Error("user", "error", err)
 			os.Exit(1)
 		}
 		return
@@ -48,17 +60,30 @@ func main() {
 	}
 }
 
-// seedCmd creates an admin user from the FLUX_ADMIN_EMAIL and
-// FLUX_ADMIN_PASSWORD environment variables. If the user already
-// exists, it logs a warning and exits successfully (idempotent).
+// seedCmd creates an admin user using command-line flags. If the user
+// already exists, it logs a warning and exits successfully (idempotent).
 func seedCmd() error {
-	email := os.Getenv("FLUX_ADMIN_EMAIL")
-	password := os.Getenv("FLUX_ADMIN_PASSWORD")
-	if email == "" || password == "" {
-		return fmt.Errorf("FLUX_ADMIN_EMAIL and FLUX_ADMIN_PASSWORD must be set")
+	flags := flag.NewFlagSet("seed", flag.ExitOnError)
+	email := flags.String("email", "", "admin email (required)")
+	passwordFile := flags.String("password-file", "", "read password from file")
+	passwordStdin := flags.Bool("password-stdin", false, "read password from stdin")
+
+	if err := flags.Parse(os.Args[2:]); err != nil {
+		return err
+	}
+	if *email == "" {
+		return fmt.Errorf("--email is required")
+	}
+	password, err := readPassword(*passwordFile, *passwordStdin)
+	if err != nil {
+		return err
 	}
 
-	cfg, err := config.Load("flux.yaml")
+	configPath := os.Getenv("FLUX_CONFIG")
+	if configPath == "" {
+		configPath = "flux.yaml"
+	}
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -67,7 +92,7 @@ func seedCmd() error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if err := repository.ConfigureSQLiteDB(db); err != nil {
 		return fmt.Errorf("configure database: %w", err)
@@ -81,8 +106,8 @@ func seedCmd() error {
 	userRepo := repository.NewSQLiteUserRepository(sdb)
 
 	// Check if the admin user already exists.
-	if _, err := userRepo.GetByEmail(context.Background(), email); err == nil {
-		slog.Info("admin user already exists", "email", email)
+	if _, err := userRepo.GetByEmail(context.Background(), *email); err == nil {
+		slog.Info("admin user already exists", "email", *email)
 		return nil
 	}
 
@@ -93,7 +118,7 @@ func seedCmd() error {
 
 	admin := model.User{
 		ID:           uuid.New().String(),
-		Email:        email,
+		Email:        *email,
 		PasswordHash: string(hash),
 		Role:         "admin",
 		CreatedAt:    time.Now().UTC(),
@@ -103,8 +128,105 @@ func seedCmd() error {
 		return fmt.Errorf("create admin user: %w", err)
 	}
 
-	slog.Info("admin user created", "email", email)
+	slog.Info("admin user created", "email", *email)
 	return nil
+}
+
+// userCmd dispatches user management subcommands.
+func userCmd() error {
+	if len(os.Args) < 3 {
+		return fmt.Errorf("usage: flux user <set-password>")
+	}
+	switch os.Args[2] {
+	case "set-password":
+		return setPasswordCmd()
+	default:
+		return fmt.Errorf("unknown user subcommand: %s", os.Args[2])
+	}
+}
+
+// setPasswordCmd updates a user's password hash by email.
+func setPasswordCmd() error {
+	flags := flag.NewFlagSet("user set-password", flag.ExitOnError)
+	email := flags.String("email", "", "user email (required)")
+	passwordFile := flags.String("password-file", "", "read password from file")
+	passwordStdin := flags.Bool("password-stdin", false, "read password from stdin")
+
+	if err := flags.Parse(os.Args[3:]); err != nil {
+		return err
+	}
+	if *email == "" {
+		return fmt.Errorf("--email is required")
+	}
+	password, err := readPassword(*passwordFile, *passwordStdin)
+	if err != nil {
+		return err
+	}
+
+	configPath := os.Getenv("FLUX_CONFIG")
+	if configPath == "" {
+		configPath = "flux.yaml"
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		return fmt.Errorf("configure database: %w", err)
+	}
+
+	if err := dbMigration.Up(db); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+
+	sdb := sqlx.NewDb(db, "sqlite")
+	userRepo := repository.NewSQLiteUserRepository(sdb)
+
+	user, err := userRepo.GetByEmail(context.Background(), *email)
+	if err != nil {
+		return fmt.Errorf("user not found: %s", *email)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	user.PasswordHash = string(hash)
+	if err := userRepo.Update(context.Background(), user); err != nil {
+		return fmt.Errorf("update user: %w", err)
+	}
+
+	slog.Info("password updated", "email", *email)
+	return nil
+}
+
+// readPassword reads a password from a file or from stdin. If passwordFile
+// is non-empty, the password is read from that file. Otherwise if
+// passwordStdin is true, the password is read from stdin. Returns an error
+// if neither source is provided or if reading fails.
+func readPassword(passwordFile string, passwordStdin bool) (string, error) {
+	if passwordFile != "" {
+		data, err := os.ReadFile(passwordFile)
+		if err != nil {
+			return "", fmt.Errorf("read password file: %w", err)
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+	if passwordStdin {
+		scanner := bufio.NewScanner(os.Stdin)
+		if !scanner.Scan() {
+			return "", fmt.Errorf("read password from stdin: %w", scanner.Err())
+		}
+		return strings.TrimSpace(scanner.Text()), nil
+	}
+	return "", fmt.Errorf("no password provided: use --password-file or --password-stdin")
 }
 
 func run() error {
