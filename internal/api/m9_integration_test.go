@@ -7,12 +7,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
-	"github.com/jmoiron/sqlx"
-
-	"github.com/decko/flux/internal/config"
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/model"
@@ -40,8 +40,9 @@ func TestM9_EventDrivenPipelineTriggers(t *testing.T) {
 	sdb := sqlx.NewDb(db, "sqlite")
 	projectRepo := repository.NewSQLiteProjectRepository(sdb)
 	pipelineRepo := repository.NewSQLitePipelineRunRepository(sdb)
+	ruleRepo := repository.NewSQLiteTriggerRuleRepository(sdb)
 
-	// 2. Create a project with pipelines and trigger rules.
+	// 2. Create a project with pipelines.
 	project := model.Project{
 		ID:      "proj-m9",
 		Name:    "test",
@@ -54,25 +55,33 @@ func TestM9_EventDrivenPipelineTriggers(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	// 3. Create TriggerService with configurable rules.
-	rules := []config.TriggerRule{
-		{
-			Event:    "ticket.labeled",
-			Labels:   []string{"flux/review"},
-			Pipeline: "review",
-		},
+	// 3. Create a DB-backed trigger rule for the project.
+	now := time.Now().UTC().Truncate(time.Second)
+	rule := model.TriggerRule{
+		ID:        uuid.New().String(),
+		ProjectID: "proj-m9",
+		Label:     "flux/review",
+		Pipeline:  "review",
+		Enabled:   true,
+		Priority:  10,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := ruleRepo.Create(ctx, rule); err != nil {
+		t.Fatalf("create trigger rule: %v", err)
 	}
 
+	// 4. Create TriggerService with DB-backed rules.
 	pipelineSvc := domain.NewPipelineRunService(pipelineRepo)
 	triggerSvc := domain.NewTriggerService(
 		pipelineSvc,
 		projectRepo,
 		pipelineRepo,
+		ruleRepo,
 		"flux-bot",
-		domain.WithTriggerRules(rules),
 	)
 
-	// 4. Ticket with trigger label creates a pipeline run.
+	// 5. Ticket with trigger label creates a pipeline run.
 	ticket := model.Ticket{
 		ID:        "ticket-m9-1",
 		ProjectID: "proj-m9",
@@ -98,7 +107,7 @@ func TestM9_EventDrivenPipelineTriggers(t *testing.T) {
 		t.Errorf("run ticket = %q, want %q", runs[0].TicketID, "ticket-m9-1")
 	}
 
-	// 5. Deduplication: second trigger should not create a new run.
+	// 6. Deduplication: second trigger should not create a new run.
 	if err := triggerSvc.CheckAndTrigger(ctx, ticket); err != nil {
 		t.Fatalf("dedup trigger: %v", err)
 	}
@@ -107,7 +116,7 @@ func TestM9_EventDrivenPipelineTriggers(t *testing.T) {
 		t.Errorf("dedup failed: expected 1 run, got %d", len(runs))
 	}
 
-	// 6. Ticket without trigger label should not create a run.
+	// 7. Ticket without trigger label should not create a run.
 	noLabel := model.Ticket{
 		ID:        "ticket-m9-2",
 		ProjectID: "proj-m9",
@@ -121,7 +130,7 @@ func TestM9_EventDrivenPipelineTriggers(t *testing.T) {
 		t.Errorf("expected 1 run (no new trigger), got %d", len(runs))
 	}
 
-	// 7. Auth: trigger endpoint requires JWT.
+	// 8. Auth: trigger endpoint requires JWT.
 	srv := NewServer(WithJWTSecret(testJWTSecretBytes))
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
