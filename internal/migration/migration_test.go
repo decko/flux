@@ -25,7 +25,7 @@ func TestUp_CreatesAllTables(t *testing.T) {
 	}
 
 	// Verify all tables exist.
-	tables := []string{"users", "projects", "tickets", "pull_requests", "pipeline_runs", "audit_events"}
+	tables := []string{"users", "projects", "tickets", "pull_requests", "pipeline_runs", "audit_events", "trigger_rules"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRowContext(context.Background(),
@@ -61,7 +61,7 @@ func TestUp_CreatesAllTables(t *testing.T) {
 		t.Errorf("expected at least 1 migration record, got %d", versionCount)
 	}
 
-	t.Log("migration smoke test: all 6 tables + 3 indexes + schema_migrations verified")
+	t.Log("migration smoke test: all 7 tables + 3 indexes + schema_migrations verified")
 }
 
 // TestUp_Idempotent verifies that running Up() twice does not fail.

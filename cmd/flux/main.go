@@ -24,8 +24,8 @@ import (
 	"github.com/decko/flux/internal/api"
 	"github.com/decko/flux/internal/config"
 	"github.com/decko/flux/internal/domain"
-	"github.com/decko/flux/internal/model"
 	dbMigration "github.com/decko/flux/internal/migration"
+	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 
 	"github.com/google/uuid"
@@ -217,6 +217,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	pipelineRepo := repository.NewSQLitePipelineRunRepository(sdb)
 	userRepo := repository.NewSQLiteUserRepository(sdb)
 	auditRepo := repository.NewSQLiteAuditRepository(sdb)
+	triggerRuleRepo := repository.NewSQLiteTriggerRuleRepository(sdb)
 	auditSvc := domain.NewAuditService(auditRepo)
 
 	projectSvc := domain.NewProjectService(projectRepo)
@@ -345,6 +346,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithAdapters(buildAdapterMap(cfg.Adapters)),
 		api.WithAuditService(auditSvc),
 		api.WithAppAuth(appAuth),
+		api.WithTriggerRuleRepo(triggerRuleRepo),
 		api.WithSPA(),
 	)
 

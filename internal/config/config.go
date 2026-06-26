@@ -55,9 +55,9 @@ type SyncConfig struct {
 
 // OrchestratorEntry configures an external pipeline orchestrator.
 type OrchestratorEntry struct {
-	Type      string        `yaml:"type"`       // "soda"
-	Path      string        `yaml:"path"`       // path to binary
-	SelfUser  string        `yaml:"self_user"`  // GitHub username of the bot (prevents self-trigger loops)
+	Type      string        `yaml:"type"`      // "soda"
+	Path      string        `yaml:"path"`      // path to binary
+	SelfUser  string        `yaml:"self_user"` // GitHub username of the bot (prevents self-trigger loops)
 	Pipelines []PipelineDef `yaml:"pipelines"`
 }
 
