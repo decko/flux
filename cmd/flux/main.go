@@ -220,6 +220,14 @@ func readPassword(passwordFile string, passwordStdin bool) (string, error) {
 		return strings.TrimSpace(string(data)), nil
 	}
 	if passwordStdin {
+		// If stdin is a terminal (not a pipe or file), the scanner will
+		// block forever waiting for input. Detect and error early.
+		if info, err := os.Stdin.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+			return "", fmt.Errorf(
+				"--password-stdin requires piped input.\n" +
+					"Usage: echo 'password' | flux user set-password --email X --password-stdin\n" +
+					"Or use: flux user set-password --email X --password-file ./pw")
+		}
 		scanner := bufio.NewScanner(os.Stdin)
 		if !scanner.Scan() {
 			return "", fmt.Errorf("read password from stdin: %w", scanner.Err())
