@@ -307,6 +307,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 				pipelineSvc,
 				projectRepo,
 				pipelineRepo,
+				triggerRuleRepo,
 				o.SelfUser,
 			)
 			syncSvc.WithTriggerService(triggerSvc)

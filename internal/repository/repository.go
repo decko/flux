@@ -180,23 +180,31 @@ type AuditRepository interface {
 	PurgeOlderThan(ctx context.Context, before time.Time) (int64, error)
 }
 
+<<<<<<< HEAD
 // TriggerRuleFilter defines criteria for listing trigger rules.
 // Zero values are ignored; only non-zero fields are used for filtering.
 type TriggerRuleFilter struct {
 	ProjectID string
 }
 
+=======
+>>>>>>> origin/main
 // TriggerRuleRepository defines the contract for trigger rule persistence.
 type TriggerRuleRepository interface {
 	// Create persists a new trigger rule. Returns an error if a rule with
 	// the same ID already exists.
 	Create(ctx context.Context, rule model.TriggerRule) error
 
+<<<<<<< HEAD
 	// Get retrieves a trigger rule by ID. Returns ErrNotFound if no rule
 	// with the given ID exists.
 	Get(ctx context.Context, id string) (model.TriggerRule, error)
 
 	// ListByProject returns all trigger rules for a given project.
+=======
+	// ListByProject returns all trigger rules for a given project, ordered
+	// by priority descending. Returns an empty slice when no rules exist.
+>>>>>>> origin/main
 	ListByProject(ctx context.Context, projectID string) ([]model.TriggerRule, error)
 
 	// Update modifies an existing trigger rule. Returns ErrNotFound if no
