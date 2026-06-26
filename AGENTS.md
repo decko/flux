@@ -34,6 +34,21 @@ Hooks run on `git commit`:
 - `bun run typecheck` (in web/) - rejects type errors
 - `bun run lint` (in web/) - rejects lint errors
 
+## ⛔ Gate: Discussion Circle (BEFORE ANY CODE)
+
+**Never write code from a bare idea.** Every feature goes through a discussion gate first:
+
+| Question type | Process | Agents |
+|--------------|---------|--------|
+| "What should we do about...", "How should we handle...", "Is this a good idea..." | Multi-agent analysis | `go-architect` + `go-reviewer` + `general` in parallel |
+| "Build this feature" (well-defined scope) | Feature intake → issue creation | `feature-intake` first |
+| Bug fix, typo, trivial refactor | Direct (skip) | None |
+
+**Required before implementation:**
+1. Discussion circle output (analysis or intake report)
+2. GitHub issue with all sections complete (Context, Acceptance Criteria, Implementation Prompts, DoD)
+3. Milestone assignment if part of a larger effort
+
 ## Architecture
 
 **flux** is a web-based control plane for agentic software development lifecycle.
@@ -75,6 +90,7 @@ Key packages:
 6. **Single binary deployment**. Frontend embedded in Go binary.
 7. **Repository pattern**. All database access through repository interfaces.
 8. **Adapter pattern**. All external integrations through adapter interfaces.
+9. **Never code from bare ideas**. Discuss architectural questions with multi-agent analysis. Run feature-intake on well-scoped features. Always create an issue with full spec before writing code.
 
 ## Git Workflow (MANDATORY)
 
@@ -243,6 +259,10 @@ Then assign it before writing any code.
 ## Complete Workflow Summary
 
 ```
+0. 🚨 NEVER work directly from an idea. ALWAYS follow the discussion circle first:
+   a. Multi-agent analysis (go-architect + go-reviewer + general) for architectural questions
+   b. OR feature-intake for well-scoped features with an existing issue
+   c. Create a GitHub issue with full spec before writing ANY code
 1. Create or identify the GitHub issue → assign to decko
 2. Create a git worktree under .worktrees/task/<slug>
 3. Plan the approach (use go-architect for complex decisions)
@@ -478,6 +498,7 @@ Update `README.md` when:
 
 ## When Editing This Project
 
+0. **Discussion circle first.** For architectural questions, use multi-agent analysis (go-architect + go-reviewer + general). For feature work, run feature-intake. Always create an issue with acceptance criteria and implementation prompts before writing code.
 1. Check `docs/architecture.md` for detailed requirements
 2. Never change a public API without explicit approval
 3. Never add a dependency without explicit approval
