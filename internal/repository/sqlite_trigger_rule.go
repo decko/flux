@@ -33,8 +33,12 @@ func (r *SQLiteTriggerRuleRepository) Create(ctx context.Context, rule model.Tri
 	if rule.Enabled {
 		enabled = 1
 	}
+	event := rule.Event
+	if event == "" {
+		event = model.DefaultEvent
+	}
 
-	query := `INSERT INTO trigger_rules (id, project_id, label, pipeline, enabled, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO trigger_rules (id, project_id, label, pipeline, enabled, priority, event, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := r.db.ExecContext(ctx, query,
 		rule.ID,
 		rule.ProjectID,
@@ -42,6 +46,7 @@ func (r *SQLiteTriggerRuleRepository) Create(ctx context.Context, rule model.Tri
 		rule.Pipeline,
 		enabled,
 		rule.Priority,
+		event,
 		rule.CreatedAt.UTC(),
 		rule.UpdatedAt.UTC(),
 	)
@@ -55,7 +60,7 @@ func (r *SQLiteTriggerRuleRepository) Create(ctx context.Context, rule model.Tri
 // priority descending. Enabled status is converted from INTEGER to bool.
 // Returns an empty non-nil slice when no rules exist.
 func (r *SQLiteTriggerRuleRepository) ListByProject(ctx context.Context, projectID string) ([]model.TriggerRule, error) {
-	query := `SELECT id, project_id, label, pipeline, enabled, priority, created_at, updated_at FROM trigger_rules WHERE project_id = ? ORDER BY priority DESC`
+	query := `SELECT id, project_id, label, pipeline, enabled, priority, event, created_at, updated_at FROM trigger_rules WHERE project_id = ? ORDER BY priority DESC`
 	rows, err := r.db.QueryContext(ctx, query, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("listing trigger rules: %w", err)
@@ -73,6 +78,7 @@ func (r *SQLiteTriggerRuleRepository) ListByProject(ctx context.Context, project
 			&rule.Pipeline,
 			&enabled,
 			&rule.Priority,
+			&rule.Event,
 			&rule.CreatedAt,
 			&rule.UpdatedAt,
 		); err != nil {
@@ -95,14 +101,19 @@ func (r *SQLiteTriggerRuleRepository) Update(ctx context.Context, rule model.Tri
 	if rule.Enabled {
 		enabled = 1
 	}
+	event := rule.Event
+	if event == "" {
+		event = model.DefaultEvent
+	}
 
-	query := `UPDATE trigger_rules SET project_id = ?, label = ?, pipeline = ?, enabled = ?, priority = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE trigger_rules SET project_id = ?, label = ?, pipeline = ?, enabled = ?, priority = ?, event = ?, updated_at = ? WHERE id = ?`
 	result, err := r.db.ExecContext(ctx, query,
 		rule.ProjectID,
 		rule.Label,
 		rule.Pipeline,
 		enabled,
 		rule.Priority,
+		event,
 		rule.UpdatedAt.UTC(),
 		rule.ID,
 	)

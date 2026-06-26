@@ -36,9 +36,12 @@ interface TriggerRule {
   pipeline: string;
   enabled: boolean;
   priority: number;
+  event: string;
   created_at: string;
   updated_at: string;
 }
+
+const VALID_EVENTS: string[] = ['ticket.labeled', 'issues', 'pull_request', 'push'];
 
 // ─── Route ──────────────────────────────────────────────────────────────
 
@@ -93,7 +96,7 @@ async function fetchTriggerRules(projectId: string): Promise<TriggerRule[]> {
 
 async function createTriggerRule(
   projectId: string,
-  data: { label: string; pipeline: string },
+  data: { label: string; pipeline: string; event?: string },
 ): Promise<TriggerRule> {
   const res = await fetch(`/api/v1/projects/${projectId}/trigger-rules`, {
     method: 'POST',
@@ -110,7 +113,7 @@ async function createTriggerRule(
 async function updateTriggerRule(
   projectId: string,
   ruleId: string,
-  data: Partial<{ label: string; pipeline: string; enabled: boolean }>,
+  data: Partial<{ label: string; pipeline: string; enabled: boolean; event: string }>,
 ): Promise<TriggerRule> {
   const res = await fetch(
     `/api/v1/projects/${projectId}/trigger-rules/${ruleId}`,
@@ -174,7 +177,7 @@ export function ProjectDetailPage() {
     queryFn: () => fetchTriggerRules(id),
   });
 
-  const addMutation = useMutation<TriggerRule, Error, { label: string; pipeline: string }>({
+  const addMutation = useMutation<TriggerRule, Error, { label: string; pipeline: string; event?: string }>({
     mutationFn: (data) => createTriggerRule(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trigger-rules', id] });
@@ -184,7 +187,7 @@ export function ProjectDetailPage() {
   const updateMutation = useMutation<
     TriggerRule,
     Error,
-    { ruleId: string; data: Partial<{ label: string; pipeline: string; enabled: boolean }> }
+    { ruleId: string; data: Partial<{ label: string; pipeline: string; enabled: boolean; event: string }> }
   >({
     mutationFn: ({ ruleId, data }) => updateTriggerRule(id, ruleId, data),
     onSuccess: () => {
@@ -328,7 +331,7 @@ interface TriggerRuleRowProps {
   rule: TriggerRule;
   pipelines: string[];
   onToggle: (enabled: boolean) => void;
-  onUpdate: (data: { label?: string; pipeline?: string; enabled?: boolean }) => void;
+  onUpdate: (data: { label?: string; pipeline?: string; enabled?: boolean; event?: string }) => void;
   onDelete: () => void;
   isUpdating: boolean;
   isDeleting: boolean;
@@ -346,15 +349,17 @@ function TriggerRuleRow({
   const [editing, setEditing] = useState(false);
   const [editLabel, setEditLabel] = useState(rule.label);
   const [editPipeline, setEditPipeline] = useState(rule.pipeline);
+  const [editEvent, setEditEvent] = useState(rule.event || VALID_EVENTS[0]);
 
   function handleSave() {
-    onUpdate({ label: editLabel, pipeline: editPipeline });
+    onUpdate({ label: editLabel, pipeline: editPipeline, event: editEvent });
     setEditing(false);
   }
 
   function handleCancel() {
     setEditLabel(rule.label);
     setEditPipeline(rule.pipeline);
+    setEditEvent(VALID_EVENTS[0]);
     setEditing(false);
   }
 
@@ -370,6 +375,20 @@ function TriggerRuleRow({
               onChange={(e) => setEditLabel(e.target.value)}
               className="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
             />
+          </label>
+          <label className="flex flex-col text-xs font-medium text-gray-700">
+            Event
+            <select
+              value={editEvent}
+              onChange={(e) => setEditEvent(e.target.value)}
+              className="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+            >
+              {VALID_EVENTS.map((ev) => (
+                <option key={ev} value={ev}>
+                  {ev}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex flex-col text-xs font-medium text-gray-700">
             Pipeline
@@ -419,6 +438,7 @@ function TriggerRuleRow({
           <span className="font-medium">{rule.label}</span>
         </label>
         <span className="text-xs text-gray-400">{rule.pipeline}</span>
+        <span className="text-xs text-gray-400">{rule.event}</span>
       </div>
       <div className="flex items-center gap-2">
         <button
@@ -426,6 +446,7 @@ function TriggerRuleRow({
           onClick={() => {
             setEditLabel(rule.label);
             setEditPipeline(rule.pipeline);
+            setEditEvent(VALID_EVENTS[0]);
             setEditing(true);
           }}
           className="text-xs text-blue-600 hover:text-blue-800"
@@ -449,7 +470,7 @@ function TriggerRuleRow({
 
 interface AddTriggerRuleFormProps {
   pipelines: string[];
-  onSave: (data: { label: string; pipeline: string }) => void;
+  onSave: (data: { label: string; pipeline: string; event?: string }) => void;
   isSaving: boolean;
   error: string | null;
 }
@@ -462,11 +483,12 @@ function AddTriggerRuleForm({
 }: AddTriggerRuleFormProps) {
   const [label, setLabel] = useState('');
   const [pipeline, setPipeline] = useState(pipelines[0] ?? '');
+  const [event, setEvent] = useState(VALID_EVENTS[0]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!label.trim() || !pipeline) return;
-    onSave({ label: label.trim(), pipeline });
+    onSave({ label: label.trim(), pipeline, event });
     setLabel('');
   }
 
@@ -487,6 +509,20 @@ function AddTriggerRuleForm({
             placeholder="e.g. Auto-deploy main"
             className="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
           />
+        </label>
+        <label className="flex flex-col text-xs font-medium text-gray-700">
+          Event
+          <select
+            value={event}
+            onChange={(e) => setEvent(e.target.value)}
+            className="mt-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+          >
+            {VALID_EVENTS.map((ev) => (
+              <option key={ev} value={ev}>
+                {ev}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="flex flex-col text-xs font-medium text-gray-700">
           Pipeline

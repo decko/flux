@@ -88,7 +88,7 @@ func TestM9_EventDrivenPipelineTriggers(t *testing.T) {
 		Labels:    []string{"flux/review"},
 		Status:    model.TicketStatusOpen,
 	}
-	if err := triggerSvc.CheckAndTrigger(ctx, ticket); err != nil {
+	if err := triggerSvc.CheckAndTrigger(ctx, ticket, model.DefaultEvent); err != nil {
 		t.Fatalf("CheckAndTrigger: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestM9_EventDrivenPipelineTriggers(t *testing.T) {
 	}
 
 	// 6. Deduplication: second trigger should not create a new run.
-	if err := triggerSvc.CheckAndTrigger(ctx, ticket); err != nil {
+	if err := triggerSvc.CheckAndTrigger(ctx, ticket, model.DefaultEvent); err != nil {
 		t.Fatalf("dedup trigger: %v", err)
 	}
 	runs, _ = pipelineRepo.List(ctx, repository.PipelineRunFilter{ProjectID: "proj-m9"})
@@ -122,7 +122,7 @@ func TestM9_EventDrivenPipelineTriggers(t *testing.T) {
 		ProjectID: "proj-m9",
 		Labels:    []string{"bug"},
 	}
-	if err := triggerSvc.CheckAndTrigger(ctx, noLabel); err != nil {
+	if err := triggerSvc.CheckAndTrigger(ctx, noLabel, model.DefaultEvent); err != nil {
 		t.Fatalf("no-trigger check: %v", err)
 	}
 	runs, _ = pipelineRepo.List(ctx, repository.PipelineRunFilter{ProjectID: "proj-m9"})

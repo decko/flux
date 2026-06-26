@@ -53,12 +53,12 @@ func NewTriggerService(
 	}
 }
 
-// CheckAndTrigger evaluates trigger rules against a ticket. If the ticket
-// matches a rule, the resolved pipeline is validated against the project's
-// configured pipelines, and if no active run exists, a new pipeline run is
-// created.
-func (s *TriggerService) CheckAndTrigger(ctx context.Context, ticket model.Ticket) error {
-	pipelineName, err := s.matchRules(ctx, ticket)
+// CheckAndTrigger evaluates trigger rules against a ticket for the given event
+// type. If the ticket matches a rule, the resolved pipeline is validated
+// against the project's configured pipelines, and if no active run exists, a
+// new pipeline run is created.
+func (s *TriggerService) CheckAndTrigger(ctx context.Context, ticket model.Ticket, eventType string) error {
+	pipelineName, err := s.matchRules(ctx, ticket, eventType)
 	if err != nil {
 		return fmt.Errorf("trigger service: match rules: %w", err)
 	}
@@ -117,10 +117,12 @@ func (s *TriggerService) CheckAndTriggerPR(ctx context.Context, pr model.PullReq
 }
 
 // matchRules queries the trigger rule repository for enabled rules matching
-// the ticket's project. Rules are ordered by priority; the highest-priority
-// rule whose label matches a ticket label determines the pipeline.
-// Falls back to the hardcoded default if no rules exist for the project.
-func (s *TriggerService) matchRules(ctx context.Context, ticket model.Ticket) (string, error) {
+// the ticket's project and event type. Rules are ordered by priority; the
+// highest-priority rule whose label matches a ticket label and whose event
+// matches the given eventType determines the pipeline. Falls back to the
+// hardcoded default if no rules exist for the project.
+// For backward compatibility, rules with an empty Event match any event type.
+func (s *TriggerService) matchRules(ctx context.Context, ticket model.Ticket, eventType string) (string, error) {
 	rules, err := s.triggerRules.ListByProject(ctx, ticket.ProjectID)
 	if err != nil {
 		return "", fmt.Errorf("list rules: %w", err)
@@ -128,17 +130,21 @@ func (s *TriggerService) matchRules(ctx context.Context, ticket model.Ticket) (s
 
 	// Fallback to hardcoded default if no rules are configured.
 	if len(rules) == 0 {
-		if hasLabel(ticket.Labels, "flux/agent") {
+		if eventType == model.DefaultEvent && hasLabel(ticket.Labels, "flux/agent") {
 			return "default", nil
 		}
 		return "", nil
 	}
 
-	// Find the highest-priority enabled rule whose label matches the ticket.
+	// Find the highest-priority enabled rule whose label matches the ticket
+	// and whose event matches the given eventType.
 	var bestPipeline string
 	bestPriority := -1
 	for _, rule := range rules {
 		if !rule.Enabled {
+			continue
+		}
+		if !model.EventMatchesRule(eventType, rule.Event) {
 			continue
 		}
 		if hasLabel(ticket.Labels, rule.Label) && rule.Priority > bestPriority {

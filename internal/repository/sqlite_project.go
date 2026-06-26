@@ -50,12 +50,13 @@ func (r *SQLiteProjectRepository) Create(ctx context.Context, project model.Proj
 		return fmt.Errorf("marshaling pipelines: %w", err)
 	}
 
-	query := `INSERT INTO projects (id, name, repo_url, github_installation_id, definition, adapters, pipelines, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO projects (id, name, repo_url, github_installation_id, webhook_id, definition, adapters, pipelines, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err = r.db.ExecContext(ctx, query,
 		project.ID,
 		project.Name,
 		project.RepoURL,
 		project.InstallationID,
+		project.WebhookID,
 		string(def),
 		string(adapters),
 		string(pipelines),
@@ -71,7 +72,7 @@ func (r *SQLiteProjectRepository) Create(ctx context.Context, project model.Proj
 // Get retrieves a project by ID. Returns ErrNotFound if no project with the
 // given ID exists.
 func (r *SQLiteProjectRepository) Get(ctx context.Context, id string) (model.Project, error) {
-	query := `SELECT id, name, repo_url, github_installation_id, definition, adapters, pipelines, created_at, updated_at FROM projects WHERE id = ?`
+	query := `SELECT id, name, repo_url, github_installation_id, webhook_id, definition, adapters, pipelines, created_at, updated_at FROM projects WHERE id = ?`
 	row := r.db.QueryRowContext(ctx, query, id)
 
 	var project model.Project
@@ -81,6 +82,7 @@ func (r *SQLiteProjectRepository) Get(ctx context.Context, id string) (model.Pro
 		&project.Name,
 		&project.RepoURL,
 		&project.InstallationID,
+		&project.WebhookID,
 		&def,
 		&adapters,
 		&pipelines,
@@ -111,7 +113,7 @@ func (r *SQLiteProjectRepository) Get(ctx context.Context, id string) (model.Pro
 // Since ProjectFilter is currently empty, this returns all projects.
 // Returns an empty non-nil slice when no projects exist.
 func (r *SQLiteProjectRepository) List(ctx context.Context, _ ProjectFilter) ([]model.Project, error) {
-	query := `SELECT id, name, repo_url, github_installation_id, definition, adapters, pipelines, created_at, updated_at FROM projects`
+	query := `SELECT id, name, repo_url, github_installation_id, webhook_id, definition, adapters, pipelines, created_at, updated_at FROM projects`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("listing projects: %w", err)
@@ -127,6 +129,7 @@ func (r *SQLiteProjectRepository) List(ctx context.Context, _ ProjectFilter) ([]
 			&project.Name,
 			&project.RepoURL,
 			&project.InstallationID,
+			&project.WebhookID,
 			&def,
 			&adapters,
 			&pipelines,
@@ -172,11 +175,12 @@ func (r *SQLiteProjectRepository) Update(ctx context.Context, project model.Proj
 		return fmt.Errorf("marshaling pipelines: %w", err)
 	}
 
-	query := `UPDATE projects SET name = ?, repo_url = ?, github_installation_id = ?, definition = ?, adapters = ?, pipelines = ?, updated_at = ? WHERE id = ?`
+	query := `UPDATE projects SET name = ?, repo_url = ?, github_installation_id = ?, webhook_id = ?, definition = ?, adapters = ?, pipelines = ?, updated_at = ? WHERE id = ?`
 	result, err := r.db.ExecContext(ctx, query,
 		project.Name,
 		project.RepoURL,
 		project.InstallationID,
+		project.WebhookID,
 		string(def),
 		string(adapters),
 		string(pipelines),

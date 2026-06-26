@@ -241,7 +241,7 @@ func (s *Server) handleIssueEvent(w http.ResponseWriter, r *http.Request, projec
 	if payload.Action == "labeled" && !isBotSender(payload.Sender.Login) {
 		// Evaluate trigger rules for the project.
 		if s.triggerRuleRepo != nil {
-			s.triggerForTicket(r.Context(), project, ticket)
+			s.triggerForTicket(r.Context(), project, ticket, "ticket.labeled")
 		}
 	}
 
@@ -289,9 +289,11 @@ func (s *Server) handlePushEvent(w http.ResponseWriter, r *http.Request, project
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 }
 
-// triggerForTicket evaluates trigger rules for the given project and ticket.
-// If a matching rule is found, a new pipeline run is created.
-func (s *Server) triggerForTicket(ctx context.Context, project *model.Project, ticket model.Ticket) {
+// triggerForTicket evaluates trigger rules for the given project and ticket
+// for the specified event type. If a matching rule is found, a new pipeline
+// run is created. Rules with an empty event match any event type (backward
+// compatibility).
+func (s *Server) triggerForTicket(ctx context.Context, project *model.Project, ticket model.Ticket, eventType string) {
 	rules, err := s.triggerRuleRepo.ListByProject(ctx, project.ID)
 	if err != nil {
 		slog.Error("webhook: failed to list trigger rules", "error", err, "project_id", project.ID)
@@ -301,11 +303,15 @@ func (s *Server) triggerForTicket(ctx context.Context, project *model.Project, t
 		return
 	}
 
-	// Find the highest-priority enabled rule whose label matches the ticket.
+	// Find the highest-priority enabled rule whose label matches the ticket
+	// and whose event matches the given eventType.
 	var bestPipeline string
 	bestPriority := -1
 	for _, rule := range rules {
 		if !rule.Enabled {
+			continue
+		}
+		if !model.EventMatchesRule(eventType, rule.Event) {
 			continue
 		}
 		if hasLabel(ticket.Labels, rule.Label) && rule.Priority > bestPriority {

@@ -173,6 +173,7 @@ func seedWebhookTriggerRule(t *testing.T, srv *Server, projectID string) model.T
 		Pipeline:  "dev-loop",
 		Enabled:   true,
 		Priority:  10,
+		Event:     model.DefaultEvent,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}
