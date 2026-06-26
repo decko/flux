@@ -40,3 +40,6 @@ migrate:
 
 seed:
 	go run ./cmd/flux seed
+
+set-password:
+	go run ./cmd/flux user set-password
