@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -158,5 +159,126 @@ func TestUserSetPassword_UserNotFound(t *testing.T) {
 	err := userCmd()
 	if err == nil {
 		t.Error("expected error for non-existent user, got nil")
+	}
+}
+
+func TestUserAdd_CreatesUser(t *testing.T) {
+	sdb := setupTestDB(t)
+	pwFile := tempFile(t, "password-123456")
+	cfgFile := tempFile(t, "database:\n  path: file::memory:?cache=shared")
+
+	defer setArgs("user", "add", "--email", "test@flux.dev", "--password-file", pwFile)()
+	t.Setenv("FLUX_CONFIG", cfgFile)
+
+	err := userCmd()
+	if err != nil {
+		t.Fatalf("user add: %v", err)
+	}
+
+	userRepo := repository.NewSQLiteUserRepository(sdb)
+	user, err := userRepo.GetByEmail(t.Context(), "test@flux.dev")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if user.Role != "user" {
+		t.Errorf("role = %q, want %q", user.Role, "user")
+	}
+}
+
+func TestUserAdd_CreatesAdmin(t *testing.T) {
+	sdb := setupTestDB(t)
+	pwFile := tempFile(t, "password-123456")
+	cfgFile := tempFile(t, "database:\n  path: file::memory:?cache=shared")
+
+	defer setArgs("user", "add", "--email", "admin2@flux.dev", "--password-file", pwFile, "--role", "admin")()
+	t.Setenv("FLUX_CONFIG", cfgFile)
+
+	err := userCmd()
+	if err != nil {
+		t.Fatalf("user add: %v", err)
+	}
+
+	userRepo := repository.NewSQLiteUserRepository(sdb)
+	user, err := userRepo.GetByEmail(t.Context(), "admin2@flux.dev")
+	if err != nil {
+		t.Fatalf("get user: %v", err)
+	}
+	if user.Role != "admin" {
+		t.Errorf("role = %q, want %q", user.Role, "admin")
+	}
+}
+
+func TestUserAdd_MissingEmail(t *testing.T) {
+	setupTestDB(t)
+	pwFile := tempFile(t, "password-123456")
+	cfgFile := tempFile(t, "database:\n  path: file::memory:?cache=shared")
+
+	defer setArgs("user", "add", "--password-file", pwFile)()
+	t.Setenv("FLUX_CONFIG", cfgFile)
+
+	err := userCmd()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "--email is required") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "--email is required")
+	}
+}
+
+func TestUserAdd_DuplicateEmail(t *testing.T) {
+	setupTestDB(t)
+	pwFile := tempFile(t, "password-123456")
+	cfgFile := tempFile(t, "database:\n  path: file::memory:?cache=shared")
+
+	defer setArgs("user", "add", "--email", "dup@flux.dev", "--password-file", pwFile)()
+	t.Setenv("FLUX_CONFIG", cfgFile)
+
+	// First creation should succeed.
+	err := userCmd()
+	if err != nil {
+		t.Fatalf("first user add: %v", err)
+	}
+
+	// Second creation with same email should fail.
+	err = userCmd()
+	if err == nil {
+		t.Fatal("expected error for duplicate email, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "already exists")
+	}
+}
+
+func TestUserAdd_InvalidRole(t *testing.T) {
+	setupTestDB(t)
+	pwFile := tempFile(t, "password-123456")
+	cfgFile := tempFile(t, "database:\n  path: file::memory:?cache=shared")
+
+	defer setArgs("user", "add", "--email", "badrole@flux.dev", "--password-file", pwFile, "--role", "superadmin")()
+	t.Setenv("FLUX_CONFIG", cfgFile)
+
+	err := userCmd()
+	if err == nil {
+		t.Fatal("expected error for invalid role, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid role") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "invalid role")
+	}
+}
+
+func TestUserAdd_ShortPassword(t *testing.T) {
+	setupTestDB(t)
+	pwFile := tempFile(t, "short")
+	cfgFile := tempFile(t, "database:\n  path: file::memory:?cache=shared")
+
+	defer setArgs("user", "add", "--email", "shortpw@flux.dev", "--password-file", pwFile)()
+	t.Setenv("FLUX_CONFIG", cfgFile)
+
+	err := userCmd()
+	if err == nil {
+		t.Fatal("expected error for short password, got nil")
+	}
+	if !strings.Contains(err.Error(), "password must be at least 12 characters") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "password must be at least 12 characters")
 	}
 }

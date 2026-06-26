@@ -79,30 +79,12 @@ func seedCmd() error {
 		return err
 	}
 
-	configPath := os.Getenv("FLUX_CONFIG")
-	if configPath == "" {
-		configPath = "flux.yaml"
-	}
-	cfg, err := config.Load(configPath)
+	sdb, err := openUserDB()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
+	defer func() { _ = sdb.Close() }()
 
-	db, err := sql.Open("sqlite", cfg.Database.Path)
-	if err != nil {
-		return fmt.Errorf("open database: %w", err)
-	}
-	defer func() { _ = db.Close() }()
-
-	if err := repository.ConfigureSQLiteDB(db); err != nil {
-		return fmt.Errorf("configure database: %w", err)
-	}
-
-	if err := dbMigration.Up(db); err != nil {
-		return fmt.Errorf("run migrations: %w", err)
-	}
-
-	sdb := sqlx.NewDb(db, "sqlite")
 	userRepo := repository.NewSQLiteUserRepository(sdb)
 
 	// Check if the admin user already exists.
@@ -138,6 +120,8 @@ func userCmd() error {
 		return fmt.Errorf("usage: flux user <set-password>")
 	}
 	switch os.Args[2] {
+	case "add":
+		return addUserCmd()
 	case "set-password":
 		return setPasswordCmd()
 	default:
@@ -163,30 +147,12 @@ func setPasswordCmd() error {
 		return err
 	}
 
-	configPath := os.Getenv("FLUX_CONFIG")
-	if configPath == "" {
-		configPath = "flux.yaml"
-	}
-	cfg, err := config.Load(configPath)
+	sdb, err := openUserDB()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
+	defer func() { _ = sdb.Close() }()
 
-	db, err := sql.Open("sqlite", cfg.Database.Path)
-	if err != nil {
-		return fmt.Errorf("open database: %w", err)
-	}
-	defer func() { _ = db.Close() }()
-
-	if err := repository.ConfigureSQLiteDB(db); err != nil {
-		return fmt.Errorf("configure database: %w", err)
-	}
-
-	if err := dbMigration.Up(db); err != nil {
-		return fmt.Errorf("run migrations: %w", err)
-	}
-
-	sdb := sqlx.NewDb(db, "sqlite")
 	userRepo := repository.NewSQLiteUserRepository(sdb)
 
 	user, err := userRepo.GetByEmail(context.Background(), *email)
@@ -205,6 +171,93 @@ func setPasswordCmd() error {
 
 	slog.Info("password updated", "email", *email)
 	return nil
+}
+
+// addUserCmd creates a new user. Requires --email and --password-file or
+// --password-stdin. --role defaults to "user" and must be "user" or "admin".
+func addUserCmd() error {
+	flags := flag.NewFlagSet("user add", flag.ExitOnError)
+	email := flags.String("email", "", "user email (required)")
+	passwordFile := flags.String("password-file", "", "read password from file")
+	passwordStdin := flags.Bool("password-stdin", false, "read password from stdin")
+	role := flags.String("role", "user", "role (user or admin)")
+
+	if err := flags.Parse(os.Args[3:]); err != nil {
+		return err
+	}
+	if *email == "" {
+		return fmt.Errorf("--email is required")
+	}
+	if *role != "user" && *role != "admin" {
+		return fmt.Errorf("invalid role %q: must be 'user' or 'admin'", *role)
+	}
+	password, err := readPassword(*passwordFile, *passwordStdin)
+	if err != nil {
+		return err
+	}
+	if len(password) < 12 {
+		return fmt.Errorf("password must be at least 12 characters")
+	}
+
+	sdb, err := openUserDB()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sdb.Close() }()
+
+	userRepo := repository.NewSQLiteUserRepository(sdb)
+
+	// Check for duplicate.
+	if _, err := userRepo.GetByEmail(context.Background(), *email); err == nil {
+		return fmt.Errorf("user already exists: %s", *email)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	user := model.User{
+		ID:           uuid.New().String(),
+		Email:        *email,
+		PasswordHash: string(hash),
+		Role:         *role,
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	if err := userRepo.Create(context.Background(), user); err != nil {
+		return fmt.Errorf("create user: %w", err)
+	}
+
+	slog.Info("user created", "email", *email, "role", *role)
+	return nil
+}
+
+// openUserDB opens the database, runs migrations, and returns a sqlx.DB.
+// Uses the FLUX_CONFIG environment variable (falling back to "flux.yaml")
+// to locate the configuration file.
+func openUserDB() (*sqlx.DB, error) {
+	configPath := os.Getenv("FLUX_CONFIG")
+	if configPath == "" {
+		configPath = "flux.yaml"
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+	db, err := sql.Open("sqlite", cfg.Database.Path)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("configure database: %w", err)
+	}
+	if err := dbMigration.Up(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+	return sqlx.NewDb(db, "sqlite"), nil
 }
 
 // readPassword reads a password from a file or from stdin. If passwordFile
