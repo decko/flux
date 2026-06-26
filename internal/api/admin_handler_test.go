@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -229,7 +228,7 @@ func TestAdminHandler_UpdateUserRole_Unauthorized(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	body := fmt.Sprintf(`{"role":"admin"}`)
+	body := `{"role":"admin"}`
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, ts.URL+"/api/v1/admin/users/user-1/role", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -249,7 +248,7 @@ func TestAdminHandler_UpdateUserRole_Forbidden(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	body := fmt.Sprintf(`{"role":"admin"}`)
+	body := `{"role":"admin"}`
 	req := nonAdminRequest(http.MethodPut, ts.URL+"/api/v1/admin/users/user-1/role", body)
 
 	resp, err := http.DefaultClient.Do(req)

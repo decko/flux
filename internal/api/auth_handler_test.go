@@ -67,6 +67,44 @@ func (r *mockUserRepo) Update(_ context.Context, u model.User) error {
 	return nil
 }
 
+func (r *mockUserRepo) List(_ context.Context) ([]model.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := make([]model.User, 0, len(r.store))
+	for _, u := range r.store {
+		result = append(result, u)
+	}
+	return result, nil
+}
+
+func (r *mockUserRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.store[id]; !exists {
+		return repository.ErrNotFound
+	}
+	delete(r.store, id)
+	return nil
+}
+
+func (r *mockUserRepo) Count(_ context.Context) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.store), nil
+}
+
+func (r *mockUserRepo) CountByRole(_ context.Context, role string) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	count := 0
+	for _, u := range r.store {
+		if u.Role == role {
+			count++
+		}
+	}
+	return count, nil
+}
+
 // setupAuthServer creates a Server with AuthService for testing.
 func setupAuthServer(t *testing.T) *Server {
 	t.Helper()
@@ -113,8 +151,9 @@ func TestHandleRegister(t *testing.T) {
 		if result["email"] != "newuser@example.com" {
 			t.Errorf("got email %q, want %q", result["email"], "newuser@example.com")
 		}
-		if result["role"] != "user" {
-			t.Errorf("got role %q, want %q", result["role"], "user")
+		// First registered user gets admin role (first-user bootstrap).
+		if result["role"] != "admin" {
+			t.Errorf("got role %q, want %q", result["role"], "admin")
 		}
 		if _, ok := result["password_hash"]; ok {
 			t.Error("response should not include password_hash")

@@ -117,6 +117,74 @@ func (r *SQLiteUserRepository) Update(ctx context.Context, user model.User) erro
 	return nil
 }
 
+// List returns all users ordered by created_at ascending.
+// Returns an empty slice if no users exist.
+func (r *SQLiteUserRepository) List(ctx context.Context) ([]model.User, error) {
+	query := `SELECT id, email, password_hash, role, created_at FROM users ORDER BY created_at`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("listing users: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var users []model.User
+	for rows.Next() {
+		var user model.User
+		if err := rows.Scan(
+			&user.ID,
+			&user.Email,
+			&user.PasswordHash,
+			&user.Role,
+			&user.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning user: %w", err)
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating users: %w", err)
+	}
+	return users, nil
+}
+
+// Delete removes a user by ID. Returns ErrNotFound if no user
+// with the given ID exists.
+func (r *SQLiteUserRepository) Delete(ctx context.Context, id string) error {
+	query := `DELETE FROM users WHERE id = ?`
+	result, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("deleting user: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// Count returns the total number of users.
+func (r *SQLiteUserRepository) Count(ctx context.Context) (int, error) {
+	query := `SELECT COUNT(*) FROM users`
+	var count int
+	if err := r.db.QueryRowContext(ctx, query).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting users: %w", err)
+	}
+	return count, nil
+}
+
+// CountByRole returns the number of users with the given role.
+func (r *SQLiteUserRepository) CountByRole(ctx context.Context, role string) (int, error) {
+	query := `SELECT COUNT(*) FROM users WHERE role = ?`
+	var count int
+	if err := r.db.QueryRowContext(ctx, query, role).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting users by role: %w", err)
+	}
+	return count, nil
+}
+
 // isUniqueConstraintViolation checks if the error is a SQLite UNIQUE
 // constraint violation (error code 19, constraint UNIQUE).
 func isUniqueConstraintViolation(err error) bool {

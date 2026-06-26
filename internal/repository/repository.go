@@ -216,4 +216,17 @@ type UserRepository interface {
 	// Update modifies an existing user. Returns ErrNotFound if no user
 	// with the given ID exists.
 	Update(ctx context.Context, user model.User) error
+
+	// List returns all users ordered by created_at ascending.
+	List(ctx context.Context) ([]model.User, error)
+
+	// Delete removes a user by ID. Returns ErrNotFound if no user
+	// with the given ID exists.
+	Delete(ctx context.Context, id string) error
+
+	// Count returns the total number of users.
+	Count(ctx context.Context) (int, error)
+
+	// CountByRole returns the number of users with the given role.
+	CountByRole(ctx context.Context, role string) (int, error)
 }
