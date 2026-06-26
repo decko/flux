@@ -520,6 +520,14 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		}
 	}()
 
+	// Wire webhook creator for auto-registration when projects are created.
+	webhookCreator := domain.NewWebhookCreator(
+		appAuth,
+		projectRepo,
+		webhookSecretRepo,
+		nil, // defaults to os.Getenv("FLUX_WEBHOOK_URL")
+	)
+
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
 		api.WithJWTSecret(jwtSecret),
@@ -535,6 +543,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithAppAuth(appAuth),
 		api.WithTriggerRuleRepo(triggerRuleRepo),
 		api.WithWebhookSecretRepo(webhookSecretRepo),
+		api.WithWebhookCreator(webhookCreator),
 		api.WithSPA(),
 	)
 

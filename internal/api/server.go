@@ -34,6 +34,7 @@ type Server struct {
 	appAuth           *github.AppAuth
 	triggerRuleRepo   repository.TriggerRuleRepository
 	webhookSecretRepo repository.WebhookSecretRepository
+	webhookCreator    *domain.WebhookCreator
 }
 
 // ServerOption configures a Server.
@@ -149,6 +150,14 @@ func WithTriggerRuleRepo(repo repository.TriggerRuleRepository) ServerOption {
 func WithWebhookSecretRepo(repo repository.WebhookSecretRepository) ServerOption {
 	return func(s *Server) {
 		s.webhookSecretRepo = repo
+	}
+}
+
+// WithWebhookCreator injects the webhook creator for automatic webhook
+// registration when projects are created.
+func WithWebhookCreator(wc *domain.WebhookCreator) ServerOption {
+	return func(s *Server) {
+		s.webhookCreator = wc
 	}
 }
 

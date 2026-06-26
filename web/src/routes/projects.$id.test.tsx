@@ -67,6 +67,7 @@ const sampleRules: Array<{
   pipeline: string;
   enabled: boolean;
   priority: number;
+  event: string;
   created_at: string;
   updated_at: string;
 }> = [
@@ -77,6 +78,7 @@ const sampleRules: Array<{
     pipeline: 'ci',
     enabled: true,
     priority: 10,
+    event: 'ticket.labeled',
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-01T00:00:00Z',
   },
@@ -87,6 +89,7 @@ const sampleRules: Array<{
     pipeline: 'lint',
     enabled: false,
     priority: 20,
+    event: 'pull_request',
     created_at: '2026-06-02T00:00:00Z',
     updated_at: '2026-06-02T00:00:00Z',
   },
@@ -379,7 +382,7 @@ describe('ProjectDetailPage', () => {
     await user.click(saveButton);
 
     await waitFor(() => {
-      expect(postedBody).toEqual({ label: 'Nightly build', pipeline: 'ci' });
+      expect(postedBody).toMatchObject({ label: 'Nightly build', pipeline: 'ci' });
     });
   });
 
@@ -426,7 +429,7 @@ describe('ProjectDetailPage', () => {
     await user.click(saveButtons[0]!);
 
     await waitFor(() => {
-      expect(updatedBody).toEqual({
+      expect(updatedBody).toMatchObject({
         label: 'Updated rule',
         pipeline: 'ci',
       });

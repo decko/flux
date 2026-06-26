@@ -324,7 +324,7 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 		// Trigger pipelines for newly synced tickets.
 		if s.triggerSvc != nil {
 			for _, t := range tickets {
-				if err := s.triggerSvc.CheckAndTrigger(ctx, t); err != nil {
+				if err := s.triggerSvc.CheckAndTrigger(ctx, t, model.DefaultEvent); err != nil {
 					s.logger.Warn("trigger check for ticket failed", "ticket_id", t.ID, "err", err)
 				}
 			}

@@ -39,6 +39,11 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fire-and-forget webhook registration — don't block the response.
+	if s.webhookCreator != nil {
+		go s.webhookCreator.CreateForProject(r.Context(), p)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Location", "/api/v1/projects/"+p.ID)
 	w.WriteHeader(http.StatusCreated)

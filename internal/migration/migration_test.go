@@ -25,7 +25,7 @@ func TestUp_CreatesAllTables(t *testing.T) {
 	}
 
 	// Verify all tables exist.
-	tables := []string{"users", "projects", "tickets", "pull_requests", "pipeline_runs", "audit_events", "trigger_rules"}
+	tables := []string{"users", "projects", "tickets", "pull_requests", "pipeline_runs", "audit_events", "trigger_rules", "webhook_secrets"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRowContext(context.Background(),
@@ -61,7 +61,27 @@ func TestUp_CreatesAllTables(t *testing.T) {
 		t.Errorf("expected at least 1 migration record, got %d", versionCount)
 	}
 
-	t.Log("migration smoke test: all 7 tables + 3 indexes + schema_migrations verified")
+	// Verify trigger_rules has event column (migration 011).
+	var eventColCount int
+	if err := db.QueryRowContext(context.Background(),
+		"SELECT count(*) FROM pragma_table_info('trigger_rules') WHERE name='event'",
+	).Scan(&eventColCount); err != nil {
+		t.Errorf("checking trigger_rules.event column: %v", err)
+	} else if eventColCount != 1 {
+		t.Errorf("trigger_rules.event column should exist after migration 011, got count=%d", eventColCount)
+	}
+
+	// Verify projects has webhook_id column (migration 012).
+	var whColCount int
+	if err := db.QueryRowContext(context.Background(),
+		"SELECT count(*) FROM pragma_table_info('projects') WHERE name='webhook_id'",
+	).Scan(&whColCount); err != nil {
+		t.Errorf("checking projects.webhook_id column: %v", err)
+	} else if whColCount != 1 {
+		t.Errorf("projects.webhook_id column should exist after migration 012, got count=%d", whColCount)
+	}
+
+	t.Log("migration smoke test: all 8 tables + 3 indexes + schema_migrations + event/webhook_id columns verified")
 }
 
 // TestUp_Idempotent verifies that running Up() twice does not fail.
