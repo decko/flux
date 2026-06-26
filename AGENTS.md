@@ -28,11 +28,14 @@ chmod +x .git/hooks/pre-commit
 ```
 
 Hooks run on `git commit`:
+- `gitleaks protect --staged` - rejects secrets in staged files
 - `gofmt -l .` - rejects unformatted Go code
 - `golangci-lint run` - rejects lint errors
 - `go test -race ./...` - rejects failing tests
 - `bun run typecheck` (in web/) - rejects type errors
 - `bun run lint` (in web/) - rejects lint errors
+
+Install gitleaks: `go install github.com/zricethezav/gitleaks/v8@latest`
 
 ## ⛔ Gate: Discussion Circle (BEFORE ANY CODE)
 
