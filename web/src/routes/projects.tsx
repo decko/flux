@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { createRoute, redirect } from '@tanstack/react-router';
+import { createRoute, redirect, Link } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
 import { InstallationPicker } from '@/components/InstallationPicker';
 import { RepositoryPicker } from '@/components/RepositoryPicker';
@@ -334,10 +334,12 @@ function ProjectList({ projects }: ProjectListProps) {
   return (
     <div className="space-y-4">
       {projects.map((project) => (
-        <div
+        <Link
           key={project.id}
+          to="/projects/$id"
+          params={{ id: project.id }}
           data-testid="project-card"
-          className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+          className="block rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium text-gray-900">{project.name}</h3>
@@ -350,19 +352,7 @@ function ProjectList({ projects }: ProjectListProps) {
               {project.definition.framework ? ` / ${project.definition.framework}` : ''}
             </p>
           )}
-          <div className="mt-2">
-            <a
-              href="#"
-              className="text-xs text-blue-600 hover:text-blue-800"
-              onClick={(e) => {
-                e.preventDefault();
-                // TODO: navigate to adapter config page
-              }}
-            >
-              Adapter Config
-            </a>
-          </div>
-        </div>
+        </Link>
       ))}
     </div>
   );

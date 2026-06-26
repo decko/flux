@@ -1,7 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+} from '@tanstack/react-router';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createAppRouter } from '../router';
 import { ProjectsPage } from './projects';
 
 // ---- Test wrapper ----
@@ -16,11 +21,16 @@ function createWrapper() {
     },
   });
 
+  const memoryHistory = createMemoryHistory({ initialEntries: ['/projects'] });
+  const router = createAppRouter(memoryHistory);
+
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
+      <RouterContextProvider router={router}>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      </RouterContextProvider>
     );
   };
 }
