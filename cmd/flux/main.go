@@ -401,6 +401,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	userRepo := repository.NewSQLiteUserRepository(sdb)
 	auditRepo := repository.NewSQLiteAuditRepository(sdb)
 	triggerRuleRepo := repository.NewSQLiteTriggerRuleRepository(sdb)
+	webhookSecretRepo := repository.NewSQLiteWebhookSecretRepository(sdb)
 	auditSvc := domain.NewAuditService(auditRepo)
 
 	projectSvc := domain.NewProjectService(projectRepo)
@@ -519,6 +520,11 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		}
 	}()
 
+	// Start webhook verification goroutine.
+	if appAuth != nil {
+		go verifyWebhooks(ctx, projectRepo, webhookSecretRepo, appAuth)
+	}
+
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
 		api.WithJWTSecret(jwtSecret),
@@ -533,6 +539,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithUserService(userSvc),
 		api.WithAppAuth(appAuth),
 		api.WithTriggerRuleRepo(triggerRuleRepo),
+		api.WithWebhookSecretRepo(webhookSecretRepo),
 		api.WithSPA(),
 	)
 
@@ -552,6 +559,60 @@ func newAppAuth() (*github.AppAuth, error) {
 		return nil, fmt.Errorf("decode GITHUB_APP_PRIVATE_KEY: %w", err)
 	}
 	return github.NewAppAuth(appID, string(keyBytes))
+}
+
+// verifyWebhooks checks every project that has a registered webhook by
+// calling the GitHub API to verify it still exists. If a webhook returns
+// 404 (not found), it clears the webhook_id on the project and deletes
+// the stored webhook secret. Batches with a 200ms delay between projects
+// to avoid rate limiting.
+func verifyWebhooks(ctx context.Context, projectRepo repository.ProjectRepository, webhookSecretRepo repository.WebhookSecretRepository, appAuth *github.AppAuth) {
+	projects, err := projectRepo.List(ctx, repository.ProjectFilter{})
+	if err != nil {
+		slog.Error("verify webhooks: list projects", "error", err)
+		return
+	}
+
+	for _, p := range projects {
+		if p.WebhookID == 0 {
+			continue
+		}
+
+		// Derive owner/repo from adapter config.
+		owner, repo := "", ""
+		for _, a := range p.Adapters {
+			if a.Type == "github" {
+				owner = a.Config["owner"]
+				repo = a.Config["repo"]
+				break
+			}
+		}
+		if owner == "" || repo == "" {
+			slog.Warn("verify webhooks: missing owner/repo for project",
+				"project_id", p.ID, "webhook_id", p.WebhookID)
+			continue
+		}
+
+		if err := github.VerifyWebhook(ctx, appAuth, p.InstallationID, owner, repo, p.WebhookID); err != nil {
+			// If the webhook returns a 404-style error, it's gone — clean up.
+			slog.Warn("webhook verification failed, clearing",
+				"project_id", p.ID, "webhook_id", p.WebhookID, "error", err)
+			p.WebhookID = 0
+			if updateErr := projectRepo.Update(ctx, p); updateErr != nil {
+				slog.Error("verify webhooks: clear webhook_id", "project_id", p.ID, "error", updateErr)
+			}
+			if delErr := webhookSecretRepo.Delete(ctx, p.ID); delErr != nil {
+				slog.Error("verify webhooks: delete secret", "project_id", p.ID, "error", delErr)
+			}
+		}
+
+		// 200ms delay between projects to avoid GitHub rate limiting.
+		select {
+		case <-time.After(200 * time.Millisecond):
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // buildAdapterMap converts a slice of config AdapterEntry to a map of

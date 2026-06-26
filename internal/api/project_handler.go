@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
+	"github.com/decko/flux/internal/adapter/github"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
@@ -118,9 +120,22 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteProject handles DELETE /api/v1/projects/{id}.
 // It deletes a project by ID and returns 204 No Content on success,
-// or 404 Not Found if no project with the given ID exists.
+// or 404 Not Found if no project with the given ID exists. If the project
+// has a registered webhook, it fire-and-forgets the GitHub webhook deletion
+// in a goroutine (does not block the response).
 func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
+	// Fetch the project first to check for webhook.
+	project, err := s.projectSvc.Get(r.Context(), id)
+	if err != nil {
+		code, msg := serviceError(err)
+		if code == http.StatusInternalServerError {
+			slog.Error("get project for delete", "error", err, "request_id", middleware.GetReqID(r.Context()))
+		}
+		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
+		return
+	}
 
 	if err := s.projectSvc.Delete(r.Context(), id); err != nil {
 		code, msg := serviceError(err)
@@ -129,6 +144,41 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
 		return
+	}
+
+	// Fire-and-forget: delete the GitHub webhook if one exists.
+	if project.WebhookID > 0 && s.appAuth != nil {
+		go func(ctx context.Context, p model.Project) {
+			// Derive owner/repo from adapter config.
+			owner, repo := "", ""
+			for _, a := range p.Adapters {
+				if a.Type == "github" {
+					owner = a.Config["owner"]
+					repo = a.Config["repo"]
+					break
+				}
+			}
+			if owner == "" || repo == "" {
+				slog.Warn("cannot delete webhook: missing owner/repo",
+					"project_id", p.ID, "webhook_id", p.WebhookID)
+				return
+			}
+
+			if err := github.DeleteWebhook(ctx, s.appAuth, p.InstallationID, owner, repo, p.WebhookID); err != nil {
+				slog.Warn("failed to delete webhook (fire-and-forget)",
+					"project_id", p.ID, "webhook_id", p.WebhookID, "error", err)
+			} else {
+				slog.Info("webhook deleted", "project_id", p.ID, "webhook_id", p.WebhookID)
+			}
+
+			// Clean up the webhook secret.
+			if s.webhookSecretRepo != nil {
+				if err := s.webhookSecretRepo.Delete(ctx, p.ID); err != nil {
+					slog.Warn("failed to delete webhook secret",
+						"project_id", p.ID, "error", err)
+				}
+			}
+		}(r.Context(), project)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

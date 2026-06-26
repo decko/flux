@@ -199,6 +199,22 @@ type TriggerRuleRepository interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// WebhookSecretRepository defines the contract for webhook secret persistence.
+// Secrets are stored per project and are used to validate incoming webhook
+// payloads from GitHub.
+type WebhookSecretRepository interface {
+	// Get retrieves the webhook secret for the given project ID.
+	// Returns ErrNotFound if no secret exists for the project.
+	Get(ctx context.Context, projectID string) (string, error)
+
+	// Set stores or updates the webhook secret for the given project ID.
+	Set(ctx context.Context, projectID, secret string) error
+
+	// Delete removes the webhook secret for the given project ID.
+	// Returns nil if no secret exists (idempotent delete).
+	Delete(ctx context.Context, projectID string) error
+}
+
 // UserRepository defines the contract for user persistence.
 type UserRepository interface {
 	// Create persists a new user. Returns ErrDuplicateEmail if a user with

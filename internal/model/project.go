@@ -10,6 +10,7 @@ type Project struct {
 	Name           string            `json:"name"`
 	RepoURL        string            `json:"repo_url"`
 	InstallationID int               `json:"installation_id"`
+	WebhookID      int               `json:"webhook_id"`
 	Definition     ProjectDefinition `json:"definition"`
 	Adapters       []AdapterConfig   `json:"adapters"`
 	Pipelines      []PipelineConfig  `json:"pipelines"`
