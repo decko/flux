@@ -520,20 +520,11 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		}
 	}()
 
-<<<<<<< HEAD
+
 	// Start webhook verification goroutine.
 	if appAuth != nil {
 		go verifyWebhooks(ctx, projectRepo, webhookSecretRepo, appAuth)
 	}
-=======
-	// Wire webhook creator for auto-registration when projects are created.
-	webhookCreator := domain.NewWebhookCreator(
-		appAuth,
-		projectRepo,
-		webhookSecretRepo,
-		nil, // defaults to os.Getenv("FLUX_WEBHOOK_URL")
-	)
->>>>>>> origin/main
 
 	srv := api.NewServer(
 		api.WithCORSOrigin(cfg.CORS.Origin),
@@ -550,10 +541,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithAppAuth(appAuth),
 		api.WithTriggerRuleRepo(triggerRuleRepo),
 		api.WithWebhookSecretRepo(webhookSecretRepo),
-<<<<<<< HEAD
-=======
-		api.WithWebhookCreator(webhookCreator),
->>>>>>> origin/main
+
 		api.WithSPA(),
 	)
 
