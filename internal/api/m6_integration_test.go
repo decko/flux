@@ -65,7 +65,7 @@ func TestM6_TrustworthyAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create project: got %d, want 201", resp.StatusCode)
 	}
@@ -101,7 +101,7 @@ func TestM6_TrustworthyAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get unauth: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("unauth: got %d, want 401", resp.StatusCode)
 	}
@@ -111,7 +111,7 @@ func TestM6_TrustworthyAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get viewer: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("viewer: got %d, want 403", resp.StatusCode)
 	}

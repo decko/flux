@@ -25,6 +25,7 @@ interface Project {
   adapters: unknown[];
   pipelines: string[];
   installation_id: number;
+  webhook_id: number;
   created_at: string;
   updated_at: string;
 }
@@ -319,6 +320,42 @@ export function ProjectDetailPage() {
                 : null
             }
           />
+        </div>
+      </section>
+
+      {/* Webhooks */}
+      <section className="mt-6">
+        <h2 className="text-lg font-semibold text-gray-900">Webhook</h2>
+        <div className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
+          {project.webhook_id && project.webhook_id > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                  Active
+                </span>
+                <span className="text-sm text-gray-500">
+                  Webhook ID: {project.webhook_id}
+                </span>
+              </div>
+              <p className="text-sm text-gray-600">
+                Webhook endpoint receives events from GitHub. The secret is
+                configured and managed by the system.
+              </p>
+              <p className="text-sm text-gray-500">
+                Secret: <span className="italic">Configured</span>
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-gray-500">
+                No webhook configured for this project.
+              </p>
+              <p className="text-sm text-gray-400">
+                To set up a webhook, configure the GitHub integration and
+                register a webhook URL pointing to your flux instance.
+              </p>
+            </div>
+          )}
         </div>
       </section>
     </div>
