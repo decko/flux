@@ -11,6 +11,7 @@ import { Route as pullRequestsRoute } from './routes/pull-requests';
 import { Route as pipelineRunsRoute } from './routes/pipeline-runs';
 import { Route as loginRoute } from './routes/login';
 import { Route as registerRoute } from './routes/register';
+import { Route as adminUsersRoute } from './routes/admin.users';
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -21,6 +22,7 @@ const routeTree = rootRoute.addChildren([
   ticketsRoute,
   pullRequestsRoute,
   pipelineRunsRoute,
+  adminUsersRoute,
 ]);
 
 export function createAppRouter(history?: RouterHistory) {
