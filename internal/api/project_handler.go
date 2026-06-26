@@ -152,7 +152,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fire-and-forget: delete the GitHub webhook if one exists.
-	if project.WebhookID > 0 && s.appAuth != nil {
+	if project.WebhookID != nil && *project.WebhookID > 0 && s.appAuth != nil {
 		go func(ctx context.Context, p model.Project) {
 			// Derive owner/repo from adapter config.
 			owner, repo := "", ""
@@ -169,7 +169,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if err := github.DeleteWebhook(ctx, s.appAuth, p.InstallationID, owner, repo, p.WebhookID); err != nil {
+			if err := github.DeleteWebhook(ctx, s.appAuth, p.InstallationID, owner, repo, *p.WebhookID); err != nil {
 				slog.Warn("failed to delete webhook (fire-and-forget)",
 					"project_id", p.ID, "webhook_id", p.WebhookID, "error", err)
 			} else {

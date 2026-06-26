@@ -576,7 +576,7 @@ func verifyWebhooks(ctx context.Context, projectRepo repository.ProjectRepositor
 	}
 
 	for _, p := range projects {
-		if p.WebhookID == 0 {
+		if p.WebhookID == nil {
 			continue
 		}
 
@@ -595,11 +595,11 @@ func verifyWebhooks(ctx context.Context, projectRepo repository.ProjectRepositor
 			continue
 		}
 
-		if err := github.VerifyWebhook(ctx, appAuth, p.InstallationID, owner, repo, p.WebhookID); err != nil {
+		if err := github.VerifyWebhook(ctx, appAuth, p.InstallationID, owner, repo, *p.WebhookID); err != nil {
 			// If the webhook returns a 404-style error, it's gone — clean up.
 			slog.Warn("webhook verification failed, clearing",
 				"project_id", p.ID, "webhook_id", p.WebhookID, "error", err)
-			p.WebhookID = 0
+			p.WebhookID = nil
 			if updateErr := projectRepo.Update(ctx, p); updateErr != nil {
 				slog.Error("verify webhooks: clear webhook_id", "project_id", p.ID, "error", updateErr)
 			}
