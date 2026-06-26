@@ -420,6 +420,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	}
 	jwtSecret := jwtSecret()
 	authSvc := domain.NewAuthService(userRepo, jwtSecret)
+	userSvc := domain.NewUserService(userRepo, domain.WithUserAuditService(auditSvc))
 
 	syncInterval, err := time.ParseDuration(cfg.Sync.Interval)
 	if err != nil {
@@ -529,6 +530,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithSyncService(syncSvc),
 		api.WithAdapters(buildAdapterMap(cfg.Adapters)),
 		api.WithAuditService(auditSvc),
+		api.WithUserService(userSvc),
 		api.WithAppAuth(appAuth),
 		api.WithTriggerRuleRepo(triggerRuleRepo),
 		api.WithSPA(),

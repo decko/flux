@@ -63,6 +63,14 @@ func (s *Server) registerRoutes() {
 				r.Post("/pipeline-runs/{id}/trigger", s.handleTriggerPipelineRun)
 				r.Post("/pipeline-runs/{id}/cancel", s.handleCancelPipelineRun)
 			})
+
+			// Admin user management routes — under /admin prefix.
+			r.Route("/admin", func(r chi.Router) {
+				r.Use(RequireRole("admin"))
+				r.Get("/users", s.handleListUsers)
+				r.Put("/users/{id}/role", s.handleUpdateUserRole)
+				r.Delete("/users/{id}", s.handleDeleteUser)
+			})
 		})
 	})
 

@@ -27,6 +27,7 @@ type Server struct {
 	pipelineSvc     *domain.PipelineRunService
 	auditSvc        *domain.AuditService
 	authSvc         *domain.AuthService
+	userSvc         *domain.UserService
 	syncSvc         syncService
 	syncMu          sync.Mutex
 	adapters        map[string]domain.AdapterInfo
@@ -102,6 +103,13 @@ func WithAuditService(svc *domain.AuditService) ServerOption {
 func WithAuthService(svc *domain.AuthService) ServerOption {
 	return func(s *Server) {
 		s.authSvc = svc
+	}
+}
+
+// WithUserService injects the user service for admin user management endpoints.
+func WithUserService(svc *domain.UserService) ServerOption {
+	return func(s *Server) {
+		s.userSvc = svc
 	}
 }
 

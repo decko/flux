@@ -54,11 +54,17 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (mod
 		return model.User{}, fmt.Errorf("hashing password: %w", err)
 	}
 
+	role := "user"
+	count, err := s.userRepo.Count(ctx)
+	if err == nil && count == 0 {
+		role = "admin"
+	}
+
 	user := model.User{
 		ID:           uuid.New().String(),
 		Email:        email,
 		PasswordHash: string(hash),
-		Role:         "user",
+		Role:         role,
 		CreatedAt:    time.Now().UTC(),
 	}
 
