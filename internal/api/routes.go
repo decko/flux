@@ -47,6 +47,7 @@ func (s *Server) registerRoutes() {
 			r.Post("/sync/trigger", s.handleSyncTrigger)
 			r.Get("/adapters", s.handleListAdapters)
 			r.Get("/adapters/{type}/health", s.handleAdapterHealth)
+			r.Get("/projects/{id}/trigger-rules", s.handleListTriggerRules)
 			r.Get("/github/installations", s.handleGitHubInstallations)
 			r.Get("/github/installations/{id}/repositories", s.handleGitHubInstallationRepositories)
 
@@ -56,6 +57,9 @@ func (s *Server) registerRoutes() {
 				r.Get("/audit-events", s.handleAuditEvents)
 				r.Get("/audit/integrity", s.handleAuditIntegrity)
 				r.Delete("/projects/{id}", s.handleDeleteProject)
+				r.Post("/projects/{id}/trigger-rules", s.handleCreateTriggerRule)
+				r.Put("/projects/{id}/trigger-rules/{ruleId}", s.handleUpdateTriggerRule)
+				r.Delete("/projects/{id}/trigger-rules/{ruleId}", s.handleDeleteTriggerRule)
 				r.Post("/pipeline-runs/{id}/trigger", s.handleTriggerPipelineRun)
 				r.Post("/pipeline-runs/{id}/cancel", s.handleCancelPipelineRun)
 			})

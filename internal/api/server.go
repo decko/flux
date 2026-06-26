@@ -11,25 +11,27 @@ import (
 
 	"github.com/decko/flux/internal/adapter/github"
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/internal/repository"
 )
 
 // Server is the HTTP server for the flux API. It wraps a chi router
 // with middleware and routes configured.
 type Server struct {
-	router      *chi.Mux
-	corsOrigin  string
-	serveSPA    bool
-	jwtSecret   []byte
-	projectSvc  *domain.ProjectService
-	ticketSvc   *domain.TicketService
-	prSvc       *domain.PullRequestService
-	pipelineSvc *domain.PipelineRunService
-	auditSvc    *domain.AuditService
-	authSvc     *domain.AuthService
-	syncSvc     syncService
-	syncMu      sync.Mutex
-	adapters    map[string]domain.AdapterInfo
-	appAuth     *github.AppAuth
+	router          *chi.Mux
+	corsOrigin      string
+	serveSPA        bool
+	jwtSecret       []byte
+	projectSvc      *domain.ProjectService
+	ticketSvc       *domain.TicketService
+	prSvc           *domain.PullRequestService
+	pipelineSvc     *domain.PipelineRunService
+	auditSvc        *domain.AuditService
+	authSvc         *domain.AuthService
+	syncSvc         syncService
+	syncMu          sync.Mutex
+	adapters        map[string]domain.AdapterInfo
+	appAuth         *github.AppAuth
+	triggerRuleRepo repository.TriggerRuleRepository
 }
 
 // ServerOption configures a Server.
@@ -122,6 +124,14 @@ func WithAdapters(adapters map[string]domain.AdapterInfo) ServerOption {
 func WithAppAuth(auth *github.AppAuth) ServerOption {
 	return func(s *Server) {
 		s.appAuth = auth
+	}
+}
+
+// WithTriggerRuleRepo injects the trigger rule repository for trigger rule
+// CRUD endpoints.
+func WithTriggerRuleRepo(repo repository.TriggerRuleRepository) ServerOption {
+	return func(s *Server) {
+		s.triggerRuleRepo = repo
 	}
 }
 

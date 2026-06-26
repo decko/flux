@@ -55,6 +55,12 @@ type SyncConfig struct {
 
 // OrchestratorEntry configures an external pipeline orchestrator.
 type OrchestratorEntry struct {
+<<<<<<< HEAD
+	Type      string        `yaml:"type"`      // "soda"
+	Path      string        `yaml:"path"`      // path to binary
+	SelfUser  string        `yaml:"self_user"` // GitHub username of the bot (prevents self-trigger loops)
+	Pipelines []PipelineDef `yaml:"pipelines"`
+=======
 	Type         string        `yaml:"type"`          // "soda"
 	Path         string        `yaml:"path"`          // path to binary
 	SelfUser     string        `yaml:"self_user"`     // GitHub username of the bot
@@ -68,6 +74,7 @@ type TriggerRule struct {
 	Labels   []string          `yaml:"labels"`   // required labels
 	Pipeline string            `yaml:"pipeline"` // pipeline name to trigger
 	Config   map[string]string `yaml:"config"`   // rule-specific config
+>>>>>>> origin/main
 }
 
 // PipelineDef defines a named pipeline with type-specific settings.

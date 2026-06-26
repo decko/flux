@@ -61,7 +61,7 @@ func TestUp_CreatesAllTables(t *testing.T) {
 		t.Errorf("expected at least 1 migration record, got %d", versionCount)
 	}
 
-	t.Log("migration smoke test: all 6 tables + 3 indexes + schema_migrations verified")
+	t.Log("migration smoke test: all 7 tables + 3 indexes + schema_migrations verified")
 }
 
 // TestUp_Idempotent verifies that running Up() twice does not fail.
