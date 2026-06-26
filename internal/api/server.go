@@ -17,22 +17,23 @@ import (
 // Server is the HTTP server for the flux API. It wraps a chi router
 // with middleware and routes configured.
 type Server struct {
-	router          *chi.Mux
-	corsOrigin      string
-	serveSPA        bool
-	jwtSecret       []byte
-	projectSvc      *domain.ProjectService
-	ticketSvc       *domain.TicketService
-	prSvc           *domain.PullRequestService
-	pipelineSvc     *domain.PipelineRunService
-	auditSvc        *domain.AuditService
-	authSvc         *domain.AuthService
-	userSvc         *domain.UserService
-	syncSvc         syncService
-	syncMu          sync.Mutex
-	adapters        map[string]domain.AdapterInfo
-	appAuth         *github.AppAuth
-	triggerRuleRepo repository.TriggerRuleRepository
+	router            *chi.Mux
+	corsOrigin        string
+	serveSPA          bool
+	jwtSecret         []byte
+	projectSvc        *domain.ProjectService
+	ticketSvc         *domain.TicketService
+	prSvc             *domain.PullRequestService
+	pipelineSvc       *domain.PipelineRunService
+	auditSvc          *domain.AuditService
+	authSvc           *domain.AuthService
+	userSvc           *domain.UserService
+	syncSvc           syncService
+	syncMu            sync.Mutex
+	adapters          map[string]domain.AdapterInfo
+	appAuth           *github.AppAuth
+	triggerRuleRepo   repository.TriggerRuleRepository
+	webhookSecretRepo repository.WebhookSecretRepository
 }
 
 // ServerOption configures a Server.
@@ -140,6 +141,14 @@ func WithAppAuth(auth *github.AppAuth) ServerOption {
 func WithTriggerRuleRepo(repo repository.TriggerRuleRepository) ServerOption {
 	return func(s *Server) {
 		s.triggerRuleRepo = repo
+	}
+}
+
+// WithWebhookSecretRepo injects the webhook secret repository used by the
+// GitHub webhook handler to verify HMAC-SHA256 signatures.
+func WithWebhookSecretRepo(repo repository.WebhookSecretRepository) ServerOption {
+	return func(s *Server) {
+		s.webhookSecretRepo = repo
 	}
 }
 

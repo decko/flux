@@ -401,6 +401,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	userRepo := repository.NewSQLiteUserRepository(sdb)
 	auditRepo := repository.NewSQLiteAuditRepository(sdb)
 	triggerRuleRepo := repository.NewSQLiteTriggerRuleRepository(sdb)
+	webhookSecretRepo := repository.NewSQLiteWebhookSecretRepository(sdb)
 	auditSvc := domain.NewAuditService(auditRepo)
 
 	projectSvc := domain.NewProjectService(projectRepo)
@@ -533,6 +534,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithUserService(userSvc),
 		api.WithAppAuth(appAuth),
 		api.WithTriggerRuleRepo(triggerRuleRepo),
+		api.WithWebhookSecretRepo(webhookSecretRepo),
 		api.WithSPA(),
 	)
 

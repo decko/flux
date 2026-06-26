@@ -16,6 +16,10 @@ func (s *Server) registerRoutes() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	// Public webhook endpoint — outside auth middleware because GitHub
+	// signs with HMAC, not JWTs.
+	s.router.Post("/api/v1/webhooks/github", s.handleGitHubWebhook)
+
 	s.router.Route("/api/v1", func(r chi.Router) {
 		// Public auth routes.
 		r.Post("/auth/register", s.handleRegister)
