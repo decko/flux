@@ -141,7 +141,7 @@ func (c *WebhookCreator) CreateForProject(ctx context.Context, project model.Pro
 	}
 
 	// Update the project with the webhook ID.
-	webhookID_ := webhookID; project.WebhookID = &webhookID_
+	project.WebhookID = webhookID
 	if err := c.projectRepo.Update(ctx, project); err != nil {
 		slog.Warn("webhook creator: failed to update project with webhook ID",
 			"project_id", project.ID, "error", err)
