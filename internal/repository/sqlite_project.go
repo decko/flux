@@ -105,6 +105,9 @@ func (r *SQLiteProjectRepository) Get(ctx context.Context, id string) (model.Pro
 	if err := json.Unmarshal([]byte(pipelines), &project.Pipelines); err != nil {
 		return model.Project{}, fmt.Errorf("unmarshaling pipelines: %w", err)
 	}
+	if project.Pipelines == nil {
+		project.Pipelines = []model.PipelineConfig{}
+	}
 
 	return project, nil
 }
@@ -147,6 +150,9 @@ func (r *SQLiteProjectRepository) List(ctx context.Context, _ ProjectFilter) ([]
 		}
 		if err := json.Unmarshal([]byte(pipelines), &project.Pipelines); err != nil {
 			return nil, fmt.Errorf("unmarshaling pipelines: %w", err)
+		}
+		if project.Pipelines == nil {
+			project.Pipelines = []model.PipelineConfig{}
 		}
 
 		projects = append(projects, project)
