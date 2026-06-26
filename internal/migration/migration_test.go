@@ -25,7 +25,7 @@ func TestUp_CreatesAllTables(t *testing.T) {
 	}
 
 	// Verify all tables exist.
-	tables := []string{"users", "projects", "tickets", "pull_requests", "pipeline_runs", "audit_events"}
+	tables := []string{"users", "projects", "tickets", "pull_requests", "pipeline_runs", "audit_events", "trigger_rules"}
 	for _, table := range tables {
 		var count int
 		err := db.QueryRowContext(context.Background(),

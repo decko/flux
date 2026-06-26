@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/decko/flux/internal/config"
 	"github.com/decko/flux/internal/model"
 )
 
@@ -21,26 +20,20 @@ type triggerRunRepo interface {
 	HasActiveRun(ctx context.Context, projectID, ticketID string) (bool, error)
 }
 
-// TriggerService evaluates tickets against trigger rules and automatically
-// creates pipeline runs when conditions match. Rules are loaded from
-// configuration via WithTriggerRules; if none are configured, the hardcoded
-// default (ticket labeled "flux/agent" → default pipeline) is used.
-type TriggerService struct {
-	pipelineSvc triggerRunner
-	projectRepo triggerProjectRepo
-	runRepo     triggerRunRepo
-	selfUser    string
-	rules       []config.TriggerRule
+type triggerRuleRepo interface {
+	ListByProject(ctx context.Context, projectID string) ([]model.TriggerRule, error)
 }
 
-// TriggerServiceOption configures a TriggerService.
-type TriggerServiceOption func(*TriggerService)
-
-// WithTriggerRules sets the trigger rules from configuration.
-func WithTriggerRules(rules []config.TriggerRule) TriggerServiceOption {
-	return func(s *TriggerService) {
-		s.rules = rules
-	}
+// TriggerService evaluates tickets against trigger rules and automatically
+// creates pipeline runs when conditions match. Rules are loaded from the
+// trigger rule repository; if none are configured for a project, the
+// hardcoded default (ticket labeled "flux/agent" → default pipeline) is used.
+type TriggerService struct {
+	pipelineSvc  triggerRunner
+	projectRepo  triggerProjectRepo
+	runRepo      triggerRunRepo
+	triggerRules triggerRuleRepo
+	selfUser     string
 }
 
 // NewTriggerService creates a new TriggerService.
@@ -48,26 +41,47 @@ func NewTriggerService(
 	pipelineSvc triggerRunner,
 	projectRepo triggerProjectRepo,
 	runRepo triggerRunRepo,
+	triggerRules triggerRuleRepo,
 	selfUser string,
-	opts ...TriggerServiceOption,
 ) *TriggerService {
-	s := &TriggerService{
-		pipelineSvc: pipelineSvc,
-		projectRepo: projectRepo,
-		runRepo:     runRepo,
-		selfUser:    selfUser,
+	return &TriggerService{
+		pipelineSvc:  pipelineSvc,
+		projectRepo:  projectRepo,
+		runRepo:      runRepo,
+		triggerRules: triggerRules,
+		selfUser:     selfUser,
 	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
 }
 
 // CheckAndTrigger evaluates trigger rules against a ticket. If the ticket
-// matches a rule and no active run exists, a new pipeline run is created.
+// matches a rule, the resolved pipeline is validated against the project's
+// configured pipelines, and if no active run exists, a new pipeline run is
+// created.
 func (s *TriggerService) CheckAndTrigger(ctx context.Context, ticket model.Ticket) error {
-	pipelineName := s.matchRules(ticket)
+	pipelineName, err := s.matchRules(ctx, ticket)
+	if err != nil {
+		return fmt.Errorf("trigger service: match rules: %w", err)
+	}
 	if pipelineName == "" {
+		return nil
+	}
+
+	// Validate the resolved pipeline exists in project config.
+	project, err := s.projectRepo.Get(ctx, ticket.ProjectID)
+	if err != nil {
+		return fmt.Errorf("trigger service: get project: %w", err)
+	}
+
+	var found bool
+	for _, p := range project.Pipelines {
+		if p.Name == pipelineName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		slog.Info("skipping trigger: pipeline not configured for project",
+			"pipeline", pipelineName, "project_id", ticket.ProjectID)
 		return nil
 	}
 
@@ -102,29 +116,37 @@ func (s *TriggerService) CheckAndTriggerPR(ctx context.Context, pr model.PullReq
 	return nil
 }
 
-// matchRules evaluates configured rules against a ticket. Falls back to
-// the hardcoded default if no rules are configured.
-func (s *TriggerService) matchRules(ticket model.Ticket) string {
-	if len(s.rules) == 0 {
-		if hasLabel(ticket.Labels, "flux/agent") {
-			return "default"
-		}
-		return ""
+// matchRules queries the trigger rule repository for enabled rules matching
+// the ticket's project. Rules are ordered by priority; the highest-priority
+// rule whose label matches a ticket label determines the pipeline.
+// Falls back to the hardcoded default if no rules exist for the project.
+func (s *TriggerService) matchRules(ctx context.Context, ticket model.Ticket) (string, error) {
+	rules, err := s.triggerRules.ListByProject(ctx, ticket.ProjectID)
+	if err != nil {
+		return "", fmt.Errorf("list rules: %w", err)
 	}
 
-	for _, rule := range s.rules {
-		if rule.Event != "ticket.labeled" {
-			continue
+	// Fallback to hardcoded default if no rules are configured.
+	if len(rules) == 0 {
+		if hasLabel(ticket.Labels, "flux/agent") {
+			return "default", nil
 		}
-		if !hasAllLabels(ticket.Labels, rule.Labels) {
-			continue
-		}
-		if rule.Pipeline != "" {
-			return rule.Pipeline
-		}
-		return "default"
+		return "", nil
 	}
-	return ""
+
+	// Find the highest-priority enabled rule whose label matches the ticket.
+	var bestPipeline string
+	bestPriority := -1
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		if hasLabel(ticket.Labels, rule.Label) && rule.Priority > bestPriority {
+			bestPriority = rule.Priority
+			bestPipeline = rule.Pipeline
+		}
+	}
+	return bestPipeline, nil
 }
 
 func hasLabel(labels []string, target string) bool {
@@ -134,13 +156,4 @@ func hasLabel(labels []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func hasAllLabels(ticketLabels, required []string) bool {
-	for _, r := range required {
-		if !hasLabel(ticketLabels, r) {
-			return false
-		}
-	}
-	return true
 }

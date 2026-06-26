@@ -180,6 +180,25 @@ type AuditRepository interface {
 	PurgeOlderThan(ctx context.Context, before time.Time) (int64, error)
 }
 
+// TriggerRuleRepository defines the contract for trigger rule persistence.
+type TriggerRuleRepository interface {
+	// Create persists a new trigger rule. Returns an error if a rule with
+	// the same ID already exists.
+	Create(ctx context.Context, rule model.TriggerRule) error
+
+	// ListByProject returns all trigger rules for a given project, ordered
+	// by priority descending. Returns an empty slice when no rules exist.
+	ListByProject(ctx context.Context, projectID string) ([]model.TriggerRule, error)
+
+	// Update modifies an existing trigger rule. Returns ErrNotFound if no
+	// rule with the rule's ID exists.
+	Update(ctx context.Context, rule model.TriggerRule) error
+
+	// Delete removes a trigger rule by ID. Returns ErrNotFound if no rule
+	// with the given ID exists.
+	Delete(ctx context.Context, id string) error
+}
+
 // UserRepository defines the contract for user persistence.
 type UserRepository interface {
 	// Create persists a new user. Returns ErrDuplicateEmail if a user with

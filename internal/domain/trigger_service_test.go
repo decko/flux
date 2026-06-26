@@ -40,6 +40,29 @@ func (r *stubRunRepo) HasActiveRun(ctx context.Context, projectID, ticketID stri
 	return r.hasActive, nil
 }
 
+// stubTriggerRuleRepo for trigger rule tests.
+type stubTriggerRuleRepo struct {
+	rules []model.TriggerRule
+	err   error
+}
+
+func (r *stubTriggerRuleRepo) ListByProject(ctx context.Context, projectID string) ([]model.TriggerRule, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	// Filter by project for realism, though tests typically set up per-test.
+	var matched []model.TriggerRule
+	for _, rule := range r.rules {
+		if rule.ProjectID == projectID {
+			matched = append(matched, rule)
+		}
+	}
+	if matched == nil {
+		return []model.TriggerRule{}, nil
+	}
+	return matched, nil
+}
+
 func TestTriggerService_CheckAndTrigger_WithTriggerLabel(t *testing.T) {
 	projectRepo := &stubProjectRepo{
 		project: model.Project{
@@ -51,7 +74,9 @@ func TestTriggerService_CheckAndTrigger_WithTriggerLabel(t *testing.T) {
 	}
 	pipelineSvc := &stubPipelineRunService{}
 	runRepo := &stubRunRepo{}
-	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, "flux-bot")
+	// No DB rules — fallback to hardcoded "flux/agent" → "default".
+	ruleRepo := &stubTriggerRuleRepo{}
+	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, ruleRepo, "flux-bot")
 
 	ticket := model.Ticket{
 		ID:        "ticket-1",
@@ -75,7 +100,8 @@ func TestTriggerService_CheckAndTrigger_WithoutTriggerLabel(t *testing.T) {
 	}
 	pipelineSvc := &stubPipelineRunService{}
 	runRepo := &stubRunRepo{}
-	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, "flux-bot")
+	ruleRepo := &stubTriggerRuleRepo{}
+	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, ruleRepo, "flux-bot")
 
 	ticket := model.Ticket{
 		ID:        "ticket-1",
@@ -98,7 +124,8 @@ func TestTriggerService_CheckAndTrigger_EmptyLabels(t *testing.T) {
 	}
 	pipelineSvc := &stubPipelineRunService{}
 	runRepo := &stubRunRepo{}
-	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, "flux-bot")
+	ruleRepo := &stubTriggerRuleRepo{}
+	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, ruleRepo, "flux-bot")
 
 	ticket := model.Ticket{
 		ID:        "ticket-1",
@@ -126,7 +153,8 @@ func TestTriggerService_CheckAndTrigger_Deduplication(t *testing.T) {
 	}
 	pipelineSvc := &stubPipelineRunService{}
 	runRepo := &stubRunRepo{hasActive: true} // active run exists
-	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, "flux-bot")
+	ruleRepo := &stubTriggerRuleRepo{}
+	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, ruleRepo, "flux-bot")
 
 	ticket := model.Ticket{
 		ID:        "ticket-1",
@@ -140,5 +168,113 @@ func TestTriggerService_CheckAndTrigger_Deduplication(t *testing.T) {
 	}
 	if len(pipelineSvc.createdRuns) != 0 {
 		t.Errorf("expected 0 pipeline runs (dedup), got %d", len(pipelineSvc.createdRuns))
+	}
+}
+
+func TestTriggerService_CheckAndTrigger_DBRuleMatch(t *testing.T) {
+	projectRepo := &stubProjectRepo{
+		project: model.Project{
+			ID: "proj-1",
+			Pipelines: []model.PipelineConfig{
+				{Name: "fix-pipeline"},
+				{Name: "dev-pipeline"},
+			},
+		},
+	}
+	pipelineSvc := &stubPipelineRunService{}
+	runRepo := &stubRunRepo{}
+	ruleRepo := &stubTriggerRuleRepo{
+		rules: []model.TriggerRule{
+			{ProjectID: "proj-1", Label: "bug", Pipeline: "fix-pipeline", Enabled: true, Priority: 10},
+			{ProjectID: "proj-1", Label: "feature", Pipeline: "dev-pipeline", Enabled: true, Priority: 5},
+		},
+	}
+	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, ruleRepo, "flux-bot")
+
+	ticket := model.Ticket{
+		ID:        "ticket-1",
+		ProjectID: "proj-1",
+		Labels:    []string{"bug", "critical"},
+	}
+
+	err := svc.CheckAndTrigger(context.Background(), ticket)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pipelineSvc.createdRuns) != 1 {
+		t.Fatalf("expected 1 pipeline run, got %d", len(pipelineSvc.createdRuns))
+	}
+	if pipelineSvc.createdRuns[0].Pipeline != "fix-pipeline" {
+		t.Errorf("expected pipeline %q, got %q", "fix-pipeline", pipelineSvc.createdRuns[0].Pipeline)
+	}
+}
+
+func TestTriggerService_CheckAndTrigger_DBRulePriority(t *testing.T) {
+	projectRepo := &stubProjectRepo{
+		project: model.Project{
+			ID: "proj-1",
+			Pipelines: []model.PipelineConfig{
+				{Name: "high-priority"},
+				{Name: "low-priority"},
+			},
+		},
+	}
+	pipelineSvc := &stubPipelineRunService{}
+	runRepo := &stubRunRepo{}
+	// Both rules match the ticket label "urgent"; highest priority wins.
+	ruleRepo := &stubTriggerRuleRepo{
+		rules: []model.TriggerRule{
+			{ProjectID: "proj-1", Label: "urgent", Pipeline: "low-priority", Enabled: true, Priority: 1},
+			{ProjectID: "proj-1", Label: "urgent", Pipeline: "high-priority", Enabled: true, Priority: 100},
+		},
+	}
+	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, ruleRepo, "flux-bot")
+
+	ticket := model.Ticket{
+		ID:        "ticket-1",
+		ProjectID: "proj-1",
+		Labels:    []string{"urgent"},
+	}
+
+	err := svc.CheckAndTrigger(context.Background(), ticket)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pipelineSvc.createdRuns) != 1 {
+		t.Fatalf("expected 1 pipeline run, got %d", len(pipelineSvc.createdRuns))
+	}
+	if pipelineSvc.createdRuns[0].Pipeline != "high-priority" {
+		t.Errorf("expected highest-priority pipeline %q, got %q", "high-priority", pipelineSvc.createdRuns[0].Pipeline)
+	}
+}
+
+func TestTriggerService_CheckAndTrigger_PipelineNotConfigured(t *testing.T) {
+	projectRepo := &stubProjectRepo{
+		project: model.Project{
+			ID:        "proj-1",
+			Pipelines: []model.PipelineConfig{}, // no pipelines configured
+		},
+	}
+	pipelineSvc := &stubPipelineRunService{}
+	runRepo := &stubRunRepo{}
+	ruleRepo := &stubTriggerRuleRepo{
+		rules: []model.TriggerRule{
+			{ProjectID: "proj-1", Label: "bug", Pipeline: "fix-pipeline", Enabled: true, Priority: 10},
+		},
+	}
+	svc := NewTriggerService(pipelineSvc, projectRepo, runRepo, ruleRepo, "flux-bot")
+
+	ticket := model.Ticket{
+		ID:        "ticket-1",
+		ProjectID: "proj-1",
+		Labels:    []string{"bug"},
+	}
+
+	err := svc.CheckAndTrigger(context.Background(), ticket)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pipelineSvc.createdRuns) != 0 {
+		t.Errorf("expected 0 pipeline runs (pipeline not configured), got %d", len(pipelineSvc.createdRuns))
 	}
 }
