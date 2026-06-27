@@ -16,23 +16,31 @@ import (
 
 // ProjectSyncStatus holds the sync result for a single project.
 type ProjectSyncStatus struct {
-	ProjectID     string
-	LastSyncAt    *time.Time
-	LastSyncError string
-	TicketsSynced int
-	PRsSynced     int
+	ProjectID       string
+	LastSyncAt      *time.Time
+	LastSyncError   string
+	TicketsSynced   int
+	PRsSynced       int
+	WebhooksHealthy bool
 }
 
 // SyncStatus holds the result of the last sync operation.
 // LastSyncAt is nil when no sync has been performed yet.
 // Projects contains per-project status for the last sync pass.
 type SyncStatus struct {
-	LastSyncAt    *time.Time
-	LastSyncError string
-	TicketsSynced int
-	PRsSynced     int
-	Projects      map[string]ProjectSyncStatus
+	LastSyncAt      *time.Time
+	LastSyncError   string
+	TicketsSynced   int
+	PRsSynced       int
+	WebhooksHealthy bool
+	Projects        map[string]ProjectSyncStatus
 }
+
+// WebhookVerifier checks whether the webhook for a project is still
+// registered and reachable at the external source. It returns true
+// if the webhook is healthy, false otherwise. An error indicates the
+// check itself failed (e.g., network error), not the webhook health.
+type WebhookVerifier func(ctx context.Context, projectID string) (healthy bool, err error)
 
 // AdapterFactory creates adapters for a specific project.
 // Returns nil adapters if the project has no credentials configured.
@@ -49,11 +57,12 @@ type SyncService struct {
 	// ProjectRepo is the repository for persisting projects.
 	ProjectRepo repository.ProjectRepository
 	// Factory creates per-project adapters for sync.
-	Factory    AdapterFactory
-	triggerSvc *TriggerService
-	auditSvc   *AuditService
-	interval   time.Duration
-	logger     *slog.Logger
+	Factory         AdapterFactory
+	webhookVerifier WebhookVerifier
+	triggerSvc      *TriggerService
+	auditSvc        *AuditService
+	interval        time.Duration
+	logger          *slog.Logger
 
 	mu      sync.Mutex
 	status  SyncStatus
@@ -110,6 +119,16 @@ func (s *SyncService) WithTriggerService(svc *TriggerService) {
 // when tickets and pull requests are created or updated during sync.
 func (s *SyncService) WithSyncAuditService(audit *AuditService) {
 	s.auditSvc = audit
+}
+
+// WithWebhookVerifier sets the webhook verification function that checks
+// whether registered webhooks are still present at the external source.
+// The verifier is called once per project during sync. A failed check
+// (returning false) marks the project's webhooks as unhealthy but does
+// not prevent the sync from proceeding. When no verifier is configured,
+// webhooks are assumed healthy.
+func (s *SyncService) WithWebhookVerifier(v WebhookVerifier) {
+	s.webhookVerifier = v
 }
 
 // Status returns the result of the last sync operation. It is safe
@@ -218,6 +237,7 @@ func (s *SyncService) SyncNow(ctx context.Context) error {
 	var totalTickets, totalPRs int
 	var firstErr string
 	var latestSync *time.Time
+	allWebhooksHealthy := true
 	for _, ps := range s.status.Projects {
 		totalTickets += ps.TicketsSynced
 		totalPRs += ps.PRsSynced
@@ -228,10 +248,14 @@ func (s *SyncService) SyncNow(ctx context.Context) error {
 			t := *ps.LastSyncAt
 			latestSync = &t
 		}
+		if !ps.WebhooksHealthy {
+			allWebhooksHealthy = false
+		}
 	}
 	s.status.TicketsSynced = totalTickets
 	s.status.PRsSynced = totalPRs
 	s.status.LastSyncError = firstErr
+	s.status.WebhooksHealthy = allWebhooksHealthy
 	if latestSync != nil {
 		s.status.LastSyncAt = latestSync
 	}
@@ -382,14 +406,30 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 		}
 	}
 
+	// Verify webhook health if a verifier is configured.
+	// This is non-blocking: a failed check does not prevent sync from
+	// proceeding. Errors from the verifier itself are logged but do
+	// not affect the webhook health status.
+	webhooksHealthy := true // default: assume healthy when unchecked
+	if s.webhookVerifier != nil {
+		healthy, verifyErr := s.webhookVerifier(ctx, projectID)
+		if verifyErr != nil {
+			s.logger.Warn("webhook verification call failed",
+				"project_id", projectID, "err", verifyErr)
+		} else {
+			webhooksHealthy = healthy
+		}
+	}
+
 	// Update per-project and aggregate status under lock.
 	s.mu.Lock()
 	now := time.Now()
 	ps := ProjectSyncStatus{
-		ProjectID:     projectID,
-		LastSyncAt:    &now,
-		TicketsSynced: ticketCount,
-		PRsSynced:     prCount,
+		ProjectID:       projectID,
+		LastSyncAt:      &now,
+		TicketsSynced:   ticketCount,
+		PRsSynced:       prCount,
+		WebhooksHealthy: webhooksHealthy,
 	}
 	if lastErr != nil {
 		ps.LastSyncError = lastErr.Error()

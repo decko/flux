@@ -486,6 +486,41 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	syncSvc := domain.NewSyncService(ticketRepo, prRepo, projectRepo, factory, syncInterval)
 	syncSvc.WithSyncAuditService(auditSvc)
 
+	// Wire webhook verifier to check webhook health during sync.
+	if appAuth != nil {
+		webhookVerifier := func(ctx context.Context, projectID string) (bool, error) {
+			project, err := projectRepo.Get(ctx, projectID)
+			if err != nil {
+				return false, fmt.Errorf("webhook verifier: get project %s: %w", projectID, err)
+			}
+			if project.WebhookID == 0 {
+				// No webhook registered — nothing to verify.
+				return true, nil
+			}
+			owner, repo := "", ""
+			for _, a := range project.Adapters {
+				if a.Type == "github" {
+					owner = a.Config["owner"]
+					repo = a.Config["repo"]
+					break
+				}
+			}
+			if owner == "" || repo == "" {
+				return false, fmt.Errorf("webhook verifier: project %s has no github adapter config", projectID)
+			}
+			if verifyErr := github.VerifyWebhook(ctx, appAuth, project.InstallationID, owner, repo, project.WebhookID); verifyErr != nil {
+				// Webhook returned non-200 — mark unhealthy but don't clean up here;
+				// the background verifyWebhooks goroutine handles cleanup. We log
+				// the error to satisfy lint but do not propagate it since a missing
+				// webhook is a health indicator, not a sync failure.
+				slog.Warn("webhook unhealthy during sync", "project_id", projectID, "error", verifyErr)
+				return false, nil
+			}
+			return true, nil
+		}
+		syncSvc.WithWebhookVerifier(webhookVerifier)
+	}
+
 	// Wire trigger service if self_user is configured.
 	for _, o := range cfg.Orchestrators {
 		if o.SelfUser != "" {

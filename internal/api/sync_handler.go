@@ -20,10 +20,11 @@ type syncService interface {
 
 // syncStatusResponse is the JSON body for GET /api/v1/sync/status.
 type syncStatusResponse struct {
-	LastSyncAt    *time.Time `json:"last_sync_at"`
-	LastSyncError string     `json:"last_sync_error"`
-	TicketsSynced int        `json:"tickets_synced"`
-	PRsSynced     int        `json:"prs_synced"`
+	LastSyncAt      *time.Time `json:"last_sync_at"`
+	LastSyncError   string     `json:"last_sync_error"`
+	TicketsSynced   int        `json:"tickets_synced"`
+	PRsSynced       int        `json:"prs_synced"`
+	WebhooksHealthy bool       `json:"webhooks_healthy"`
 }
 
 func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
@@ -35,9 +36,10 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 	status := s.syncSvc.Status()
 
 	resp := syncStatusResponse{
-		LastSyncError: status.LastSyncError,
-		TicketsSynced: status.TicketsSynced,
-		PRsSynced:     status.PRsSynced,
+		LastSyncError:   status.LastSyncError,
+		TicketsSynced:   status.TicketsSynced,
+		PRsSynced:       status.PRsSynced,
+		WebhooksHealthy: status.WebhooksHealthy,
 	}
 	if status.LastSyncAt != nil {
 		resp.LastSyncAt = status.LastSyncAt
