@@ -286,6 +286,9 @@ function AdminUsersPage() {
 
   const resetMutation = useMutation<User, Error, { id: string; password: string }, unknown>({
     mutationFn: ({ id, password }) => resetPassword(id, password),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['admin-users'] });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       setResetTarget(null);

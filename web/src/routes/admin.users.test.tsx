@@ -657,4 +657,78 @@ describe('AdminUsersPage', () => {
       }
     });
   });
+
+  // ── Reset Password: password mismatch ───────────────────────────────
+
+  it('prevents reset submission when passwords do not match', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method || 'GET';
+      if (url === '/api/v1/admin/users' && method === 'GET') {
+        return Promise.resolve(jsonResponse(sampleUsers));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+    });
+
+    await renderAdminPage();
+    await waitFor(() => {
+      expect(screen.getByText('dev@flux.dev')).toBeInTheDocument();
+    });
+
+    const resetButtons = screen.getAllByRole('button', { name: /reset password/i });
+    await user.click(resetButtons[1]!);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/^new password$/i), 'newsecurepass12');
+    await user.type(screen.getByLabelText(/^confirm/i), 'differentpass12');
+    await user.click(screen.getByRole('button', { name: /^reset$/i }));
+
+    // Should show mismatch error, not send PUT
+    await waitFor(() => {
+      expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Reset Password: API error ───────────────────────────────────────
+
+  it('shows error when reset password API call fails', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method || 'GET';
+      if (url === '/api/v1/admin/users' && method === 'GET') {
+        return Promise.resolve(jsonResponse(sampleUsers));
+      }
+      if (
+        url.startsWith('/api/v1/admin/users/') &&
+        url.endsWith('/password') &&
+        method === 'PUT'
+      ) {
+        return Promise.resolve(jsonErrorResponse(500, 'Internal Server Error'));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+    });
+
+    await renderAdminPage();
+    await waitFor(() => {
+      expect(screen.getByText('dev@flux.dev')).toBeInTheDocument();
+    });
+
+    const resetButtons = screen.getAllByRole('button', { name: /reset password/i });
+    await user.click(resetButtons[1]!);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/^new password$/i), 'newsecurepass12');
+    await user.type(screen.getByLabelText(/^confirm/i), 'newsecurepass12');
+    await user.click(screen.getByRole('button', { name: /^reset$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/internal server error/i)).toBeInTheDocument();
+    });
+  });
 });
