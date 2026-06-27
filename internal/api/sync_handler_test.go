@@ -24,10 +24,11 @@ func (s *mockSyncService) Status() domain.SyncStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return domain.SyncStatus{
-		LastSyncAt:    s.lastSyncAt,
-		LastSyncError: s.lastSyncError,
-		TicketsSynced: s.ticketsSynced,
-		PRsSynced:     s.prsSynced,
+		LastSyncAt:      s.lastSyncAt,
+		LastSyncError:   s.lastSyncError,
+		TicketsSynced:   s.ticketsSynced,
+		PRsSynced:       s.prsSynced,
+		WebhooksHealthy: true,
 	}
 }
 
@@ -168,6 +169,30 @@ func TestHandleSyncStatus_AfterTrigger(t *testing.T) {
 	}
 	if status.PRsSynced <= 0 {
 		t.Errorf("got prs_synced %d, want > 0", status.PRsSynced)
+	}
+}
+
+func TestHandleSyncStatus_WebhooksHealthyField(t *testing.T) {
+	srv, _ := setupSyncServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	req := authedRequest(http.MethodGet, ts.URL+"/api/v1/sync/status", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/sync/status: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var status syncStatusResponse
+	mustDecode(t, resp, &status)
+
+	if !status.WebhooksHealthy {
+		t.Error("expected webhooks_healthy to be true by default")
 	}
 }
 
