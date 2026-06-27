@@ -1,13 +1,24 @@
 title = "Flux gitleaks config"
 
 [allowlist]
-  description = "Allowlist for test data and known non-secrets"
+  description = "Global Allowlist"
+
+  # Ignore based on file path
   paths = [
-    '''\.env.example''',
+    '''\.env\.example''',
     '''\.env$''',
     '''soda\.yaml\.example''',
     '''flux\.yaml\.example''',
     '''_test\.go$''',
     '''web/src/api/.*test\.ts''',
     '''web/src/.*\.test\.tsx''',
+  ]
+
+  # Ignore lines matching known test fixtures
+  regexes = [
+    '''ghs_test_token''',
+    '''ghs_fresh_token''',
+    '''ghs_expired''',
+    '''ghs_cached_valid''',
+    '''ghs_install_''',
   ]
