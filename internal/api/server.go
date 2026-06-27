@@ -35,7 +35,6 @@ type Server struct {
 	triggerRuleRepo   repository.TriggerRuleRepository
 	webhookSecretRepo repository.WebhookSecretRepository
 	webhookCreator    *domain.WebhookCreator
-
 }
 
 // ServerOption configures a Server.
@@ -146,7 +145,6 @@ func WithTriggerRuleRepo(repo repository.TriggerRuleRepository) ServerOption {
 	}
 }
 
-
 // WithWebhookSecretRepo injects the webhook secret repository for webhook
 // secret management (used during project deletion and webhook lifecycle).
 func WithWebhookSecretRepo(repo repository.WebhookSecretRepository) ServerOption {
@@ -162,7 +160,6 @@ func WithWebhookCreator(c *domain.WebhookCreator) ServerOption {
 		s.webhookCreator = c
 	}
 }
-
 
 // NewServer creates a new Server with all middleware and routes registered.
 // Middleware order: ErrorHandler (outermost, catches panics in all downstream middleware) →
