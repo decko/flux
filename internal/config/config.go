@@ -51,6 +51,17 @@ type AuditConfig struct {
 // SyncConfig holds periodic sync settings.
 type SyncConfig struct {
 	Interval string `yaml:"interval"` // duration string, e.g. "5m", "30s"
+	// Enabled controls whether the background sync loop runs.
+	// When nil (default) or true, the loop starts. When false, only
+	// the startup one-off reconciliation and manual sync triggers run.
+	// Use false to rely on webhooks for real-time data ingress.
+	Enabled *bool `yaml:"enabled"`
+}
+
+// IsEnabled returns true if the background sync loop should run.
+// Defaults to true (nil → enabled) for backward compatibility.
+func (sc SyncConfig) IsEnabled() bool {
+	return sc.Enabled == nil || *sc.Enabled
 }
 
 // OrchestratorEntry configures an external pipeline orchestrator.

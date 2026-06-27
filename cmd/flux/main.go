@@ -501,8 +501,16 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		}
 	}
 
-	// Start background sync loop.
-	go syncSvc.Run(ctx)
+	// Start background sync loop if enabled.
+	if cfg.Sync.IsEnabled() {
+		go syncSvc.Run(ctx)
+	} else {
+		slog.Info("background sync disabled via config; relying on webhooks + manual trigger")
+		// Run startup reconciliation once, then exit.
+		go func() {
+			_ = syncSvc.SyncNow(ctx)
+		}()
+	}
 
 	// Start periodic audit cleanup goroutine.
 	go func() {
