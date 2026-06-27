@@ -1232,3 +1232,247 @@ func TestSyncService_PerProjectStatus(t *testing.T) {
 		t.Errorf("aggregate PRsSynced: got %d, want 3", status.PRsSynced)
 	}
 }
+
+// ─── Mock: AuditRepository (captures events) ─────────────────────────────
+
+type captureAuditRepo struct {
+	mu     sync.Mutex
+	events []model.AuditEvent
+	latest *model.AuditEvent
+}
+
+func newCaptureAuditRepo() *captureAuditRepo {
+	return &captureAuditRepo{events: make([]model.AuditEvent, 0)}
+}
+
+func (r *captureAuditRepo) Insert(_ context.Context, e model.AuditEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+	r.latest = &e
+	return nil
+}
+
+func (r *captureAuditRepo) List(_ context.Context, _ repository.AuditFilter) ([]model.AuditEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := make([]model.AuditEvent, len(r.events))
+	copy(result, r.events)
+	// Return in descending order to match SQLiteAuditRepository behavior.
+	for i, j := 0, len(result)-1; i < j; i, j = i+1, j-1 {
+		result[i], result[j] = result[j], result[i]
+	}
+	return result, nil
+}
+
+func (r *captureAuditRepo) Latest(_ context.Context) (*model.AuditEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.latest, nil
+}
+
+func (r *captureAuditRepo) PurgeOlderThan(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
+// ─── Tests: Sync Audit Events ────────────────────────────────────────────
+
+func TestSyncService_AuditEvent_TicketCreate(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	auditRepo := newCaptureAuditRepo()
+	auditSvc := NewAuditService(auditRepo)
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
+	ticketAdapter := &stubTicketAdapter{
+		name: "test-ticket",
+		tickets: []model.Ticket{
+			sampleTicket("proj-1", "ext-1"),
+		},
+	}
+	scmAdapter := &stubSCMAdapter{name: "test-scm"}
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
+	svc.WithSyncAuditService(auditSvc)
+
+	ctx := context.Background()
+	err := svc.SyncProject(ctx, "proj-1")
+	must(t, err)
+
+	// Verify an audit event was recorded for ticket creation via sync.
+	events, err := auditRepo.List(ctx, repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 1 {
+		t.Fatalf("got %d audit events, want 1", len(events))
+	}
+	if events[0].Action != model.AuditActionTicketCreatedSync {
+		t.Errorf("action = %q, want %q", events[0].Action, model.AuditActionTicketCreatedSync)
+	}
+	if events[0].ResourceType != "ticket" {
+		t.Errorf("resource_type = %q, want %q", events[0].ResourceType, "ticket")
+	}
+	if events[0].Metadata != "origin=sync" {
+		t.Errorf("metadata = %q, want %q", events[0].Metadata, "origin=sync")
+	}
+	// Sync events should have a system actor indicating the sync origin.
+	if events[0].ActorID != "system:sync" {
+		t.Errorf("actor_id = %q, want %q", events[0].ActorID, "system:sync")
+	}
+}
+
+func TestSyncService_AuditEvent_TicketUpdate(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	auditRepo := newCaptureAuditRepo()
+	auditSvc := NewAuditService(auditRepo)
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
+	scmAdapter := &stubSCMAdapter{name: "test-scm"}
+
+	// Pre-seed a ticket in the repo.
+	existing := sampleTicket("proj-1", "ext-1")
+	existing.ID = model.TicketID(existing.Source, existing.ExternalID)
+	now := time.Now()
+	existing.CreatedAt = now
+	existing.UpdatedAt = now
+	if err := ticketRepo.Create(context.Background(), existing); err != nil {
+		t.Fatalf("seed ticket: %v", err)
+	}
+
+	var curAdapter *stubTicketAdapter
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return curAdapter, scmAdapter, nil
+		}, 5*time.Minute)
+	svc.WithSyncAuditService(auditSvc)
+
+	// Sync with same ticket but different title to trigger update.
+	updated := sampleTicket("proj-1", "ext-1")
+	updated.Title = "Updated Title"
+	curAdapter = &stubTicketAdapter{
+		name:    "test-ticket",
+		tickets: []model.Ticket{updated},
+	}
+
+	ctx := context.Background()
+	err := svc.SyncProject(ctx, "proj-1")
+	must(t, err)
+
+	// Should have one audit event for the update.
+	events, err := auditRepo.List(ctx, repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 1 {
+		t.Fatalf("got %d audit events, want 1", len(events))
+	}
+	if events[0].Action != model.AuditActionTicketUpdatedSync {
+		t.Errorf("action = %q, want %q", events[0].Action, model.AuditActionTicketUpdatedSync)
+	}
+	if events[0].Metadata != "origin=sync" {
+		t.Errorf("metadata = %q, want %q", events[0].Metadata, "origin=sync")
+	}
+}
+
+func TestSyncService_AuditEvent_PRCreate(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	auditRepo := newCaptureAuditRepo()
+	auditSvc := NewAuditService(auditRepo)
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
+	ticketAdapter := &stubTicketAdapter{name: "test-ticket"}
+	scmAdapter := &stubSCMAdapter{
+		name: "test-scm",
+		prs: []model.PullRequest{
+			samplePR("proj-1", "ext-1"),
+		},
+	}
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
+	svc.WithSyncAuditService(auditSvc)
+
+	ctx := context.Background()
+	err := svc.SyncProject(ctx, "proj-1")
+	must(t, err)
+
+	// Verify an audit event was recorded for PR creation via sync.
+	events, err := auditRepo.List(ctx, repository.AuditFilter{})
+	must(t, err)
+	if len(events) != 1 {
+		t.Fatalf("got %d audit events, want 1", len(events))
+	}
+	if events[0].Action != model.AuditActionPRCreatedSync {
+		t.Errorf("action = %q, want %q", events[0].Action, model.AuditActionPRCreatedSync)
+	}
+	if events[0].ResourceType != "pull_request" {
+		t.Errorf("resource_type = %q, want %q", events[0].ResourceType, "pull_request")
+	}
+	if events[0].Metadata != "origin=sync" {
+		t.Errorf("metadata = %q, want %q", events[0].Metadata, "origin=sync")
+	}
+	if events[0].ActorID != "system:sync" {
+		t.Errorf("actor_id = %q, want %q", events[0].ActorID, "system:sync")
+	}
+}
+
+func TestSyncService_AuditEvent_MultipleTicketsAndPRs(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	auditRepo := newCaptureAuditRepo()
+	auditSvc := NewAuditService(auditRepo)
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
+	ticketAdapter := &stubTicketAdapter{
+		name: "test-ticket",
+		tickets: []model.Ticket{
+			sampleTicket("proj-1", "ext-1"),
+			sampleTicket("proj-1", "ext-2"),
+		},
+	}
+	scmAdapter := &stubSCMAdapter{
+		name: "test-scm",
+		prs: []model.PullRequest{
+			samplePR("proj-1", "ext-101"),
+		},
+	}
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
+	svc.WithSyncAuditService(auditSvc)
+
+	ctx := context.Background()
+	err := svc.SyncProject(ctx, "proj-1")
+	must(t, err)
+
+	events, err := auditRepo.List(ctx, repository.AuditFilter{})
+	must(t, err)
+	// Should have 3 events: 2 ticket creates + 1 PR create.
+	if len(events) != 3 {
+		t.Fatalf("got %d audit events, want 3 (2 ticket creates + 1 PR create)", len(events))
+	}
+
+	// Count by action type.
+	var ticketCreates, prCreates int
+	for _, e := range events {
+		switch e.Action {
+		case model.AuditActionTicketCreatedSync:
+			ticketCreates++
+		case model.AuditActionPRCreatedSync:
+			prCreates++
+		}
+	}
+	if ticketCreates != 2 {
+		t.Errorf("got %d ticket.created.sync events, want 2", ticketCreates)
+	}
+	if prCreates != 1 {
+		t.Errorf("got %d pull_request.created.sync events, want 1", prCreates)
+	}
+}

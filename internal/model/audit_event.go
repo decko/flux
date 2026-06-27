@@ -9,6 +9,19 @@ import (
 // Convention follows "<resource>.<action>" format, e.g., "project.created".
 type AuditAction string
 
+// Audit action constants for ticket and pull request events originating
+// from webhooks and sync operations.
+const (
+	AuditActionTicketCreatedWebhook AuditAction = "ticket.created.webhook"
+	AuditActionTicketUpdatedWebhook AuditAction = "ticket.updated.webhook"
+	AuditActionTicketCreatedSync    AuditAction = "ticket.created.sync"
+	AuditActionTicketUpdatedSync    AuditAction = "ticket.updated.sync"
+	AuditActionPRCreatedWebhook     AuditAction = "pull_request.created.webhook"
+	AuditActionPRUpdatedWebhook     AuditAction = "pull_request.updated.webhook"
+	AuditActionPRCreatedSync        AuditAction = "pull_request.created.sync"
+	AuditActionPRUpdatedSync        AuditAction = "pull_request.updated.sync"
+)
+
 // ErrInvalidAuditEvent is returned when an audit event fails validation.
 var ErrInvalidAuditEvent = errors.New("invalid audit event")
 

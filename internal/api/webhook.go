@@ -18,6 +18,7 @@ import (
 
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
+	"github.com/decko/flux/pkg/authctx"
 )
 
 // githubEventType is the set of GitHub webhook event types that flux handles.
@@ -227,6 +228,7 @@ func (s *Server) handleIssueEvent(w http.ResponseWriter, r *http.Request, projec
 	}
 
 	ticket := issueToTicket(project.ID, payload)
+	created := false
 
 	if err := s.ticketSvc.Create(r.Context(), ticket); err != nil {
 		// If the ticket already exists, update it.
@@ -240,6 +242,22 @@ func (s *Server) handleIssueEvent(w http.ResponseWriter, r *http.Request, projec
 			slog.Error("webhook: failed to create ticket", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal error", "")
 			return
+		}
+	} else {
+		created = true
+	}
+
+	// Record audit event for ticket create/update via webhook.
+	if s.auditSvc != nil {
+		deliveryID := r.Header.Get("X-GitHub-Delivery")
+		metadata := fmt.Sprintf("delivery=%s", deliveryID)
+		action := model.AuditActionTicketUpdatedWebhook
+		if created {
+			action = model.AuditActionTicketCreatedWebhook
+		}
+		auditCtx := authctx.WithUserID(r.Context(), "system:webhook")
+		if err := s.auditSvc.Record(auditCtx, action, "ticket", ticket.ID, metadata); err != nil {
+			slog.Error("webhook: failed to record audit event", "error", err)
 		}
 	}
 
@@ -273,6 +291,7 @@ func (s *Server) handlePREvent(w http.ResponseWriter, r *http.Request, project *
 	}
 
 	pr := prToPullRequest(project.ID, payload)
+	created := false
 
 	// Upsert via the PR service.
 	if err := s.prSvc.Create(r.Context(), pr); err != nil {
@@ -286,6 +305,22 @@ func (s *Server) handlePREvent(w http.ResponseWriter, r *http.Request, project *
 			slog.Error("webhook: failed to create pull request", "error", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal error", "")
 			return
+		}
+	} else {
+		created = true
+	}
+
+	// Record audit event for PR create/update via webhook.
+	if s.auditSvc != nil {
+		deliveryID := r.Header.Get("X-GitHub-Delivery")
+		metadata := fmt.Sprintf("delivery=%s", deliveryID)
+		action := model.AuditActionPRUpdatedWebhook
+		if created {
+			action = model.AuditActionPRCreatedWebhook
+		}
+		auditCtx := authctx.WithUserID(r.Context(), "system:webhook")
+		if err := s.auditSvc.Record(auditCtx, action, "pull_request", pr.ID, metadata); err != nil {
+			slog.Error("webhook: failed to record audit event", "error", err)
 		}
 	}
 
