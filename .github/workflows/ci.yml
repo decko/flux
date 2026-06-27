@@ -46,7 +46,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.0
+          version: latest
 
       - name: gofmt
         run: test -z "$(gofmt -s -l . 2>&1 | grep -v '^web/')"
