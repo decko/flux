@@ -404,7 +404,18 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	webhookSecretRepo := repository.NewSQLiteWebhookSecretRepository(sdb)
 	auditSvc := domain.NewAuditService(auditRepo)
 
-	projectSvc := domain.NewProjectService(projectRepo)
+	// Build GitHub App auth (may be nil if not configured).
+	appAuth, appAuthErr := newAppAuth()
+	if appAuthErr != nil {
+		slog.Warn("github app not configured", "error", appAuthErr)
+	}
+
+	webhookUpd := &domain.GitHubWebhookUpdater{AppAuth: appAuth}
+	projectSvc := domain.NewProjectService(projectRepo,
+		domain.WithSecretRepo(webhookSecretRepo),
+		domain.WithWebhookUpdater(webhookUpd),
+		domain.WithAuditService(auditSvc),
+	)
 	ticketSvc := domain.NewTicketService(ticketRepo)
 	prSvc := domain.NewPullRequestService(prRepo)
 	pipelineSvc := domain.NewPipelineRunService(pipelineRepo)
@@ -427,12 +438,6 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	if err != nil {
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("parse sync interval: %w", err)
-	}
-
-	// Build factory for per-project adapters.
-	appAuth, appAuthErr := newAppAuth()
-	if appAuthErr != nil {
-		slog.Warn("github app not configured", "error", appAuthErr)
 	}
 	factory := func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
 		project, err := projectRepo.Get(ctx, projectID)

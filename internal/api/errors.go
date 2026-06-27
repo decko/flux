@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/repository"
 )
 
@@ -17,6 +18,12 @@ func serviceError(err error) (int, string) {
 	}
 	if errors.Is(err, repository.ErrDuplicateEmail) {
 		return http.StatusConflict, "email already exists"
+	}
+	if errors.Is(err, domain.ErrWebhookNotConfigured) || errors.Is(err, domain.ErrWebhookURLNotSet) {
+		return http.StatusServiceUnavailable, err.Error()
+	}
+	if errors.Is(err, domain.ErrNoGitHubAdapter) || errors.Is(err, domain.ErrNoWebhookRegistered) {
+		return http.StatusBadRequest, err.Error()
 	}
 	// Validation errors are returned unwrapped by the service; repo errors are wrapped.
 	// We use a heuristic to distinguish them: validation messages contain known phrases.

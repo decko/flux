@@ -131,6 +131,36 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 // handleResetPassword handles PUT /api/v1/admin/users/{id}/password.
 // Body: {"password"}. Returns 200 OK with the updated user on success.
+// handleRotateWebhookSecret handles POST /api/v1/projects/{id}/webhook/rotate-secret.
+// It generates a new webhook secret, updates the GitHub webhook, stores the new
+// secret, and records an audit event. Requires admin role.
+// Returns 200 with {"status":"rotated"} on success.
+func (s *Server) handleRotateWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	if s.projectSvc == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "project service not available", middleware.GetReqID(r.Context()))
+		return
+	}
+
+	projectID := chi.URLParam(r, "id")
+	if projectID == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing project ID", middleware.GetReqID(r.Context()))
+		return
+	}
+
+	if err := s.projectSvc.RotateWebhookSecret(r.Context(), projectID); err != nil {
+		code, msg := serviceError(err)
+		if code == http.StatusInternalServerError {
+			slog.Error("rotate webhook secret", "error", err, "request_id", middleware.GetReqID(r.Context()))
+		}
+		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "rotated"})
+}
+
 func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	if s.userSvc == nil {
 		writeJSONError(w, http.StatusServiceUnavailable, "user service not available", middleware.GetReqID(r.Context()))

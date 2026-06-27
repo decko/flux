@@ -20,6 +20,9 @@ const (
 	AuditActionPRUpdatedWebhook     AuditAction = "pull_request.updated.webhook"
 	AuditActionPRCreatedSync        AuditAction = "pull_request.created.sync"
 	AuditActionPRUpdatedSync        AuditAction = "pull_request.updated.sync"
+	// AuditActionWebhookSecretRotated is recorded when an admin rotates a
+	// project's webhook secret.
+	AuditActionWebhookSecretRotated AuditAction = "webhook.secret_rotated"
 )
 
 // ErrInvalidAuditEvent is returned when an audit event fails validation.
