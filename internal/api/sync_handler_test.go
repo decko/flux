@@ -242,3 +242,20 @@ func TestHandleSyncTrigger_Unauthorized(t *testing.T) {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 	}
 }
+
+func TestHandleSyncTrigger_Forbidden(t *testing.T) {
+	srv, _ := setupSyncServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	req := nonAdminRequest(http.MethodPost, ts.URL+"/api/v1/sync/trigger", "")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/sync/trigger (non-admin): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}

@@ -48,7 +48,6 @@ func (s *Server) registerRoutes() {
 			r.Get("/pipeline-runs/{id}", s.handleGetPipelineRun)
 
 			r.Get("/sync/status", s.handleSyncStatus)
-			r.Post("/sync/trigger", s.handleSyncTrigger)
 			r.Get("/adapters", s.handleListAdapters)
 			r.Get("/adapters/{type}/health", s.handleAdapterHealth)
 			r.Get("/projects/{id}/trigger-rules", s.handleListTriggerRules)
@@ -66,6 +65,7 @@ func (s *Server) registerRoutes() {
 				r.Delete("/projects/{id}/trigger-rules/{ruleId}", s.handleDeleteTriggerRule)
 				r.Post("/pipeline-runs/{id}/trigger", s.handleTriggerPipelineRun)
 				r.Post("/pipeline-runs/{id}/cancel", s.handleCancelPipelineRun)
+				r.Post("/sync/trigger", s.handleSyncTrigger)
 			})
 
 			// Admin user management routes — under /admin prefix.
