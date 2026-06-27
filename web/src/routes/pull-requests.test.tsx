@@ -263,6 +263,7 @@ describe('PullRequestsPage', () => {
 
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('status=open'),
+      expect.any(Object),
     );
   });
 

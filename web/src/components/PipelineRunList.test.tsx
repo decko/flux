@@ -171,7 +171,7 @@ describe('PipelineRunList', () => {
   // --- Success state: rendering runs ---
 
   it('renders pipeline run cards when data is loaded', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(sampleRuns));
+    mockFetch.mockResolvedValue(jsonResponse({ items: sampleRuns }));
 
     renderList('ticket-1');
 
@@ -183,7 +183,7 @@ describe('PipelineRunList', () => {
   });
 
   it('renders the correct number of run cards', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(sampleRuns));
+    mockFetch.mockResolvedValue(jsonResponse({ items: sampleRuns }));
 
     renderList('ticket-1');
 
@@ -194,7 +194,7 @@ describe('PipelineRunList', () => {
   });
 
   it('displays the orchestrator name for each run', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(sampleRuns));
+    mockFetch.mockResolvedValue(jsonResponse({ items: sampleRuns }));
 
     renderList('ticket-1');
 
@@ -207,7 +207,7 @@ describe('PipelineRunList', () => {
   // --- Status badges ---
 
   it('displays status badges for each run', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(sampleRuns));
+    mockFetch.mockResolvedValue(jsonResponse({ items: sampleRuns }));
 
     renderList('ticket-1');
 
@@ -219,7 +219,7 @@ describe('PipelineRunList', () => {
   });
 
   it('renders status badges with semantic labels', async () => {
-    mockFetch.mockResolvedValue(jsonResponse([sampleRuns[0]]));
+    mockFetch.mockResolvedValue(jsonResponse({ items: [sampleRuns[0]] }));
 
     renderList('ticket-1');
 
@@ -232,7 +232,7 @@ describe('PipelineRunList', () => {
   // --- Phase count ---
 
   it('displays the phase count for each run', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(sampleRuns));
+    mockFetch.mockResolvedValue(jsonResponse({ items: sampleRuns }));
 
     renderList('ticket-1');
 
@@ -247,7 +247,7 @@ describe('PipelineRunList', () => {
   // --- Started time ---
 
   it('displays the started time for each run', async () => {
-    mockFetch.mockResolvedValue(jsonResponse([sampleRuns[0]]));
+    mockFetch.mockResolvedValue(jsonResponse({ items: [sampleRuns[0]] }));
 
     renderList('ticket-1');
 
