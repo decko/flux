@@ -173,6 +173,13 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set the system actor for all downstream audit events. Webhook
+	// requests are HMAC-authenticated, not JWT-authenticated, so the
+	// context has no user ID. Inject "system:webhook" so that audit
+	// events (project.updated, ticket.created.webhook, etc.) have
+	// an accountable actor.
+	r = r.WithContext(authctx.WithUserID(r.Context(), "system:webhook"))
+
 	// If core services aren't wired, skip processing gracefully.
 	if s.projectSvc == nil {
 		w.WriteHeader(http.StatusOK)
@@ -255,8 +262,7 @@ func (s *Server) handleIssueEvent(w http.ResponseWriter, r *http.Request, projec
 		if created {
 			action = model.AuditActionTicketCreatedWebhook
 		}
-		auditCtx := authctx.WithUserID(r.Context(), "system:webhook")
-		if err := s.auditSvc.Record(auditCtx, action, "ticket", ticket.ID, metadata); err != nil {
+		if err := s.auditSvc.Record(r.Context(), action, "ticket", ticket.ID, metadata); err != nil {
 			slog.Error("webhook: failed to record audit event", "error", err)
 		}
 	}
@@ -265,7 +271,7 @@ func (s *Server) handleIssueEvent(w http.ResponseWriter, r *http.Request, projec
 	now := time.Now().UTC()
 	project.LastWebhookAt = &now
 	if err := s.projectSvc.Update(r.Context(), *project); err != nil {
-		slog.Warn("webhook: failed to update project last_webhook_at", "error", err)
+		slog.Warn("webhook: project updated but audit event failed", "error", err, "project_id", project.ID)
 	}
 
 	// Only trigger pipeline runs for labeled events from non-bot senders.
@@ -318,8 +324,7 @@ func (s *Server) handlePREvent(w http.ResponseWriter, r *http.Request, project *
 		if created {
 			action = model.AuditActionPRCreatedWebhook
 		}
-		auditCtx := authctx.WithUserID(r.Context(), "system:webhook")
-		if err := s.auditSvc.Record(auditCtx, action, "pull_request", pr.ID, metadata); err != nil {
+		if err := s.auditSvc.Record(r.Context(), action, "pull_request", pr.ID, metadata); err != nil {
 			slog.Error("webhook: failed to record audit event", "error", err)
 		}
 	}
@@ -328,7 +333,7 @@ func (s *Server) handlePREvent(w http.ResponseWriter, r *http.Request, project *
 	now := time.Now().UTC()
 	project.LastWebhookAt = &now
 	if err := s.projectSvc.Update(r.Context(), *project); err != nil {
-		slog.Warn("webhook: failed to update project last_webhook_at", "error", err)
+		slog.Warn("webhook: project updated but audit event failed", "error", err, "project_id", project.ID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -343,7 +348,7 @@ func (s *Server) handlePushEvent(w http.ResponseWriter, r *http.Request, project
 	now := time.Now().UTC()
 	project.LastWebhookAt = &now
 	if err := s.projectSvc.Update(r.Context(), *project); err != nil {
-		slog.Warn("webhook: failed to update project last_webhook_at", "error", err)
+		slog.Warn("webhook: project updated but audit event failed", "error", err, "project_id", project.ID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
