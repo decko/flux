@@ -106,6 +106,17 @@ describe('Dashboard', () => {
           ),
         );
       }
+      if (url.includes('/sync/status')) {
+        return Promise.resolve(
+          jsonResponse({
+            last_sync_at: new Date().toISOString(),
+            last_sync_error: '',
+            tickets_synced: 5,
+            prs_synced: 3,
+            webhooks_healthy: true,
+          }),
+        );
+      }
       return Promise.reject(new Error('Unknown URL'));
     });
 
@@ -125,7 +136,20 @@ describe('Dashboard', () => {
   });
 
   it('renders StatCard links with correct hrefs', async () => {
-    mockFetch.mockImplementation(() => Promise.resolve(jsonResponse([])));
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/sync/status')) {
+        return Promise.resolve(
+          jsonResponse({
+            last_sync_at: new Date().toISOString(),
+            last_sync_error: '',
+            tickets_synced: 0,
+            prs_synced: 0,
+            webhooks_healthy: true,
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
 
     renderDashboard();
 
@@ -144,7 +168,20 @@ describe('Dashboard', () => {
   });
 
   it('shows four StatCards on success', async () => {
-    mockFetch.mockImplementation(() => Promise.resolve(jsonResponse([])));
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/sync/status')) {
+        return Promise.resolve(
+          jsonResponse({
+            last_sync_at: new Date().toISOString(),
+            last_sync_error: '',
+            tickets_synced: 0,
+            prs_synced: 0,
+            webhooks_healthy: true,
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
 
     renderDashboard();
 
@@ -156,7 +193,20 @@ describe('Dashboard', () => {
   // --- Empty state ---
 
   it('shows zero counts when all endpoints return empty arrays', async () => {
-    mockFetch.mockImplementation(() => Promise.resolve(jsonResponse([])));
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/sync/status')) {
+        return Promise.resolve(
+          jsonResponse({
+            last_sync_at: new Date().toISOString(),
+            last_sync_error: '',
+            tickets_synced: 0,
+            prs_synced: 0,
+            webhooks_healthy: true,
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
 
     renderDashboard();
 

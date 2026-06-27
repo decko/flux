@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createRoute, redirect } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
+import { SyncStatusSection } from '../components/SyncStatusSection';
 
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
@@ -166,6 +167,7 @@ export function Dashboard() {
         <StatCard title="Pull Requests" count={pullRequestCount} href="/pull-requests" />
         <StatCard title="Pipeline Runs" count={pipelineRunCount} href="/pipeline-runs" />
       </div>
+      <SyncStatusSection />
     </div>
   );
 }

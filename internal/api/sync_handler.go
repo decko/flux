@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/decko/flux/internal/domain"
+	"github.com/decko/flux/pkg/authctx"
 )
 
 // syncService defines the interface for sync operations used by HTTP handlers.
@@ -38,10 +39,13 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 	status := s.syncSvc.Status()
 
 	resp := syncStatusResponse{
-		LastSyncError:   status.LastSyncError,
 		TicketsSynced:   status.TicketsSynced,
 		PRsSynced:       status.PRsSynced,
 		WebhooksHealthy: status.WebhooksHealthy,
+	}
+	// Only admins see error details (may contain upstream URLs, auth failures).
+	if authctx.Role(r.Context()) == "admin" {
+		resp.LastSyncError = status.LastSyncError
 	}
 	if status.LastSyncAt != nil {
 		resp.LastSyncAt = status.LastSyncAt
