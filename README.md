@@ -218,10 +218,17 @@ Tech stack: Go 1.25+, Chi v5, SQLite, React 19, TypeScript, Vite, TanStack Route
 | Milestone | Status | Description |
 |-----------|--------|-------------|
 | **M1: Foundation** | ✅ Complete | Go + Chi + SQLite + API + Auth + SPA embed |
-| **M2: GitHub Adapter** | 🔜 Next | Issues + PRs sync from GitHub |
-| **M3: soda Integration** | 📋 Planned | Trigger and monitor soda pipeline runs |
-| **M4: Frontend** | 📋 Planned | Full SPA dashboard with real data |
-| **M5: Self-Host** | 📋 Planned | Flux manages flux |
+| **M2: GitHub Adapter** | ✅ Complete | Issues + PRs sync from GitHub, relationships, auto-sync |
+| **M3: soda Integration** | ✅ Complete | Orchestrator adapter, pipeline trigger |
+| **M4: Frontend** | ✅ Complete | Full SPA dashboard with TanStack Router + Query |
+| **M5: Self-Host** | ✅ Complete | Background workers, config, docs |
+| **M6: Audit** | ✅ Complete | Hash-chained audit events, role middleware, API |
+| **M7: Audit UI** | ✅ Complete | Audit viewer, hash chain, retention policy |
+| **M8: Discovery** | ✅ Complete | GitHub installation/repo browser, project wizard |
+| **M9: Triggers** | ✅ Complete | TriggerService, dedup, configurable rules, CLI admin |
+| **M10: Trigger UI** | ✅ Complete | DB-backed trigger rules, CRUD API, rule editor |
+| **M11: Webhooks** | ✅ Complete | HMAC webhook receiver, auto-registration, lifecycle |
+| **M12: Sync & Webhook Hardening** | 🔜 In Progress | Deterministic IDs, sync.enabled, webhook health, audit ingress, secret rotation |
 
 ## Contributing
 
