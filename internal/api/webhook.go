@@ -243,6 +243,13 @@ func (s *Server) handleIssueEvent(w http.ResponseWriter, r *http.Request, projec
 		}
 	}
 
+	// Update the project's last webhook timestamp (non-blocking).
+	now := time.Now().UTC()
+	project.LastWebhookAt = &now
+	if err := s.projectSvc.Update(r.Context(), *project); err != nil {
+		slog.Warn("webhook: failed to update project last_webhook_at", "error", err)
+	}
+
 	// Only trigger pipeline runs for labeled events from non-bot senders.
 	if payload.Action == "labeled" && !isBotSender(payload.Sender.Login) {
 		// Evaluate trigger rules for the project.
@@ -282,6 +289,13 @@ func (s *Server) handlePREvent(w http.ResponseWriter, r *http.Request, project *
 		}
 	}
 
+	// Update the project's last webhook timestamp (non-blocking).
+	now := time.Now().UTC()
+	project.LastWebhookAt = &now
+	if err := s.projectSvc.Update(r.Context(), *project); err != nil {
+		slog.Warn("webhook: failed to update project last_webhook_at", "error", err)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "created"})
@@ -290,6 +304,13 @@ func (s *Server) handlePREvent(w http.ResponseWriter, r *http.Request, project *
 // handlePushEvent processes a push webhook event. Currently this is a no-op
 // placeholder for future automation (e.g., triggering CI pipelines on push).
 func (s *Server) handlePushEvent(w http.ResponseWriter, r *http.Request, project *model.Project) {
+	// Update the project's last webhook timestamp (non-blocking).
+	now := time.Now().UTC()
+	project.LastWebhookAt = &now
+	if err := s.projectSvc.Update(r.Context(), *project); err != nil {
+		slog.Warn("webhook: failed to update project last_webhook_at", "error", err)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})

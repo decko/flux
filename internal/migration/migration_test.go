@@ -81,7 +81,17 @@ func TestUp_CreatesAllTables(t *testing.T) {
 		t.Errorf("projects.webhook_id column should exist after migration 012, got count=%d", whColCount)
 	}
 
-	t.Log("migration smoke test: all 8 tables + 3 indexes + schema_migrations + event/webhook_id columns verified")
+	// Verify projects has last_webhook_at column (migration 014).
+	var lwhColCount int
+	if err := db.QueryRowContext(context.Background(),
+		"SELECT count(*) FROM pragma_table_info('projects') WHERE name='last_webhook_at'",
+	).Scan(&lwhColCount); err != nil {
+		t.Errorf("checking projects.last_webhook_at column: %v", err)
+	} else if lwhColCount != 1 {
+		t.Errorf("projects.last_webhook_at column should exist after migration 014, got count=%d", lwhColCount)
+	}
+
+	t.Log("migration smoke test: all 8 tables + 3 indexes + schema_migrations + event/webhook_id/last_webhook_at columns verified")
 }
 
 // TestUp_Idempotent verifies that running Up() twice does not fail.

@@ -14,8 +14,11 @@ type Project struct {
 	Definition     ProjectDefinition `json:"definition"`
 	Adapters       []AdapterConfig   `json:"adapters"`
 	Pipelines      []PipelineConfig  `json:"pipelines"`
-	CreatedAt      time.Time         `json:"created_at"`
-	UpdatedAt      time.Time         `json:"updated_at"`
+	// LastWebhookAt is the timestamp of the most recent webhook event received
+	// for this project. It is nil if no webhook event has been received yet.
+	LastWebhookAt *time.Time `json:"last_webhook_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // ProjectDefinition describes the technical profile of a project,
