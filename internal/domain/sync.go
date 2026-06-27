@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/decko/flux/internal/adapter/scm"
 	"github.com/decko/flux/internal/adapter/ticket"
 	"github.com/decko/flux/internal/model"
@@ -428,7 +426,7 @@ func (s *SyncService) updateTicket(ctx context.Context, existing model.Ticket, i
 
 // createTicket assigns a new ID and timestamps, then persists the ticket.
 func (s *SyncService) createTicket(ctx context.Context, t model.Ticket) error {
-	t.ID = uuid.New().String()
+	t.ID = model.TicketID(t.Source, t.ExternalID)
 	now := time.Now()
 	t.CreatedAt = now
 	t.UpdatedAt = now
@@ -456,7 +454,7 @@ func (s *SyncService) updatePR(ctx context.Context, existing model.PullRequest, 
 
 // createPR assigns a new ID and timestamps, then persists the PR.
 func (s *SyncService) createPR(ctx context.Context, pr model.PullRequest) error {
-	pr.ID = uuid.New().String()
+	pr.ID = model.PRID(pr.Source, pr.ExternalID)
 	now := time.Now()
 	pr.CreatedAt = now
 	pr.UpdatedAt = now
