@@ -399,21 +399,20 @@ function AdminUsersPage() {
         >
           <div className="rounded-lg bg-white p-6 shadow-xl max-w-md w-full">
             <h2 id="create-user-title" className="text-lg font-semibold text-gray-900">Create User</h2>
+            {createError && (
+              <div
+                role="alert"
+                className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+              >
+                {createError}
+              </div>
+            )}
             <CreateUserForm
               onSubmit={handleCreateSubmit}
               onCancel={() => setShowCreateForm(false)}
               isPending={createMutation.isPending}
             />
           </div>
-        </div>
-      )}
-
-      {createError && (
-        <div
-          role="alert"
-          className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
-        >
-          {createError}
         </div>
       )}
 
