@@ -113,6 +113,63 @@ async function deleteUser(id: string): Promise<void> {
   }
 }
 
+/**
+ * Generates a random alphanumeric password of the given length
+ * using cryptographically secure random values.
+ */
+function generatePassword(length = 16): string {
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array, (byte) => charset[byte % charset.length]).join('');
+}
+
+/**
+ * Creates a new user (admin only).
+ * POST /api/v1/admin/users body: {email, password, role} → User
+ */
+async function createUser(email: string, password: string, role: string): Promise<User> {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch('/api/v1/admin/users', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ email, password, role }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as Record<string, unknown>).error as string || res.statusText);
+  }
+
+  return res.json() as Promise<User>;
+}
+
+/**
+ * Resets a user's password (admin only).
+ * PUT /api/v1/admin/users/{id}/password body: {password} → User
+ */
+async function resetPassword(id: string, password: string): Promise<User> {
+  const token = getToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`/api/v1/admin/users/${id}/password`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ password }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as Record<string, unknown>).error as string || res.statusText);
+  }
+
+  return res.json() as Promise<User>;
+}
+
 // --- Page component ---
 
 /**
@@ -125,6 +182,12 @@ function AdminUsersPage() {
   const queryClient = useQueryClient();
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetPw, setResetPw] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
 
   // Role guard — decode JWT to check admin status
   const token = getToken();
@@ -180,6 +243,51 @@ function AdminUsersPage() {
     },
   });
 
+  const createMutation = useMutation<User, Error, { email: string; password: string; role: string }, { previousUsers: User[] | undefined }>({
+    mutationFn: ({ email, password, role }) => createUser(email, password, role),
+    onMutate: async ({ email, role }) => {
+      setCreateError(null);
+      await queryClient.cancelQueries({ queryKey: ['admin-users'] });
+      const previousUsers = queryClient.getQueryData<User[]>(['admin-users']);
+      const tempUser: User = {
+        id: `temp-${Date.now()}`,
+        email,
+        role,
+        created_at: new Date().toISOString(),
+      };
+      queryClient.setQueryData<User[]>(['admin-users'], (old) =>
+        [...(old ?? []), tempUser],
+      );
+      return { previousUsers };
+    },
+    onSuccess: () => {
+      setShowCreateForm(false);
+    },
+    onError: (err, _vars, context) => {
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['admin-users'], context.previousUsers);
+      }
+      setCreateError(err.message);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    },
+  });
+
+  const resetMutation = useMutation<User, Error, { id: string; password: string }, unknown>({
+    mutationFn: ({ id, password }) => resetPassword(id, password),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      setResetTarget(null);
+      setResetPw('');
+      setResetConfirm('');
+      setResetError(null);
+    },
+    onError: (err) => {
+      setResetError(err.message);
+    },
+  });
+
   const handleRoleChange = (id: string, role: string) => {
     roleMutation.mutate({ id, role });
   };
@@ -188,6 +296,28 @@ function AdminUsersPage() {
     if (deleteTarget) {
       deleteMutation.mutate(deleteTarget.id);
     }
+  };
+
+  const handleCreateSubmit = (data: { email: string; password: string; role: string }) => {
+    createMutation.mutate(data);
+  };
+
+  const handleResetConfirm = () => {
+    setResetError(null);
+    if (resetPw !== resetConfirm) {
+      setResetError('Passwords do not match');
+      return;
+    }
+    if (resetTarget) {
+      resetMutation.mutate({ id: resetTarget.id, password: resetPw });
+    }
+  };
+
+  const handleResetCancel = () => {
+    setResetTarget(null);
+    setResetPw('');
+    setResetConfirm('');
+    setResetError(null);
   };
 
   // Access denied for non-admin users
@@ -201,25 +331,55 @@ function AdminUsersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+        <button
+          type="button"
+          onClick={() => setShowCreateForm(true)}
+          className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          Add User
+        </button>
+      </div>
 
-      {query.isPending && <UsersSkeleton />}
-      {query.isError && (
-        <ErrorBanner
-          message={
-            query.error instanceof Error
-              ? query.error.message
-              : String(query.error)
-          }
+      {showCreateForm ? (
+        <CreateUserForm
+          onSubmit={handleCreateSubmit}
+          onCancel={() => setShowCreateForm(false)}
+          isPending={createMutation.isPending}
         />
+      ) : (
+        <>
+          {query.isPending && <UsersSkeleton />}
+          {query.isError && (
+            <ErrorBanner
+              message={
+                query.error instanceof Error
+                  ? query.error.message
+                  : String(query.error)
+              }
+            />
+          )}
+          {query.isSuccess && query.data.length === 0 && <EmptyState />}
+          {query.isSuccess && query.data.length > 0 && (
+            <UsersTable
+              users={query.data}
+              onRoleChange={handleRoleChange}
+              onDelete={(user) => setDeleteTarget(user)}
+              onResetPassword={(user) => setResetTarget(user)}
+              disableReset={resetTarget !== null}
+            />
+          )}
+        </>
       )}
-      {query.isSuccess && query.data.length === 0 && <EmptyState />}
-      {query.isSuccess && query.data.length > 0 && (
-        <UsersTable
-          users={query.data}
-          onRoleChange={handleRoleChange}
-          onDelete={(user) => setDeleteTarget(user)}
-        />
+
+      {createError && (
+        <div
+          role="alert"
+          className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+        >
+          {createError}
+        </div>
       )}
 
       {roleError && (
@@ -254,6 +414,55 @@ function AdminUsersPage() {
                 className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {deleteMutation.isPending ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset password modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">
+              Reset Password for {resetTarget.email}
+            </h2>
+            {resetError && (
+              <div role="alert" className="mb-3 text-sm text-red-600">
+                {resetError}
+              </div>
+            )}
+            <div className="space-y-3">
+              <input
+                aria-label="New password"
+                type="password"
+                value={resetPw}
+                onChange={(e) => setResetPw(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+              />
+              <input
+                aria-label="Confirm"
+                type="password"
+                value={resetConfirm}
+                onChange={(e) => setResetConfirm(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleResetCancel}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleResetConfirm}
+                disabled={resetMutation.isPending}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {resetMutation.isPending ? 'Resetting...' : 'Reset'}
               </button>
             </div>
           </div>
@@ -304,16 +513,132 @@ function EmptyState() {
   );
 }
 
+// --- Create user form ---
+
+interface CreateUserFormProps {
+  onSubmit: (data: { email: string; password: string; role: string }) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}
+
+/**
+ * Inline form for creating a new user with email, password,
+ * confirm password, and role fields. Includes a generate button
+ * for random password creation.
+ */
+function CreateUserForm({ onSubmit, onCancel, isPending }: CreateUserFormProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('user');
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const handleGenerate = () => {
+    const pw = generatePassword();
+    setPassword(pw);
+    setConfirmPassword(pw);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalError(null);
+
+    if (!email.trim()) {
+      setLocalError('Email is required');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setLocalError('Passwords do not match');
+      return;
+    }
+
+    onSubmit({ email: email.trim(), password, role });
+  };
+
+  return (
+    <div className="mt-4 rounded-lg border border-dashed border-gray-300 p-4">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <input
+          aria-label="Email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+        />
+        <div className="flex gap-2">
+          <input
+            aria-label="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+          />
+          <button
+            type="button"
+            onClick={handleGenerate}
+            className="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Generate
+          </button>
+        </div>
+        <input
+          aria-label="Confirm password"
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          placeholder="Confirm password"
+          className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+        />
+        <select
+          aria-label="Role"
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+          className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+        >
+          <option value="user">user</option>
+          <option value="admin">admin</option>
+        </select>
+        {localError && (
+          <div role="alert" className="text-sm text-red-600">
+            {localError}
+          </div>
+        )}
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isPending}
+            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isPending ? 'Creating...' : 'Create'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // --- User table ---
 
 interface UsersTableProps {
   users: User[];
   onRoleChange: (id: string, role: string) => void;
   onDelete: (user: User) => void;
+  onResetPassword: (user: User) => void;
+  disableReset?: boolean;
 }
 
 /** Renders the admin user table with role management and delete actions. */
-function UsersTable({ users, onRoleChange, onDelete }: UsersTableProps) {
+function UsersTable({ users, onRoleChange, onDelete, onResetPassword, disableReset }: UsersTableProps) {
   return (
     <div className="mt-6 overflow-x-auto">
       <table className="w-full border border-gray-200">
@@ -355,6 +680,16 @@ function UsersTable({ users, onRoleChange, onDelete }: UsersTableProps) {
                 {formatDate(user.created_at)}
               </td>
               <td className="px-4 py-3">
+                {!disableReset && (
+                  <button
+                    type="button"
+                    aria-label={`Reset Password for ${user.email}`}
+                    onClick={() => onResetPassword(user)}
+                    className="mr-3 text-blue-600 hover:text-blue-800"
+                  >
+                    Reset Password
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-label={`Delete ${user.email}`}
