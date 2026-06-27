@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createRoute, redirect } from '@tanstack/react-router';
 import { Route as rootRoute } from './__root';
@@ -119,9 +119,16 @@ async function deleteUser(id: string): Promise<void> {
  */
 function generatePassword(length = 16): string {
   const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const array = new Uint8Array(length);
+  const maxValid = Math.floor(256 / charset.length) * charset.length;
+  const array = new Uint8Array(length * 2); // oversample to avoid loops
   crypto.getRandomValues(array);
-  return Array.from(array, (byte) => charset[byte % charset.length]).join('');
+  const result: number[] = [];
+  for (let i = 0; i < array.length && result.length < length; i++) {
+    const byte = array[i]!;
+    if (byte >= maxValid) continue; // reject biased values
+    result.push(byte % charset.length);
+  }
+  return result.map((i) => charset[i]).join('');
 }
 
 /**
@@ -173,8 +180,9 @@ async function resetPassword(id: string, password: string): Promise<User> {
 // --- Page component ---
 
 /**
- * AdminUsersPage displays a user management table with role change
- * and delete capabilities. Accessible only to users with role "admin".
+ * AdminUsersPage displays a user management table with role change, delete,
+ * create user, and reset password capabilities. Accessible only to users
+ * with role "admin".
  *
  * States: loading skeleton, error banner, empty state, user table.
  */
@@ -188,6 +196,8 @@ function AdminUsersPage() {
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetPw, setResetPw] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  const resetPwRef = useRef<HTMLInputElement>(null);
 
   // Role guard — decode JWT to check admin status
   const token = getToken();
@@ -320,6 +330,18 @@ function AdminUsersPage() {
     setResetError(null);
   };
 
+  useEffect(() => {
+    if (deleteTarget) {
+      deleteCancelRef.current?.focus();
+    }
+  }, [deleteTarget]);
+
+  useEffect(() => {
+    if (resetTarget) {
+      resetPwRef.current?.focus();
+    }
+  }, [resetTarget]);
+
   // Access denied for non-admin users
   if (!isAdmin) {
     return (
@@ -342,35 +364,48 @@ function AdminUsersPage() {
         </button>
       </div>
 
-      {showCreateForm ? (
-        <CreateUserForm
-          onSubmit={handleCreateSubmit}
-          onCancel={() => setShowCreateForm(false)}
-          isPending={createMutation.isPending}
+      {query.isPending && <UsersSkeleton />}
+      {query.isError && (
+        <ErrorBanner
+          message={
+            query.error instanceof Error
+              ? query.error.message
+              : String(query.error)
+          }
         />
-      ) : (
-        <>
-          {query.isPending && <UsersSkeleton />}
-          {query.isError && (
-            <ErrorBanner
-              message={
-                query.error instanceof Error
-                  ? query.error.message
-                  : String(query.error)
-              }
+      )}
+      {query.isSuccess && query.data.length === 0 && <EmptyState />}
+      {query.isSuccess && query.data.length > 0 && (
+        <UsersTable
+          users={query.data}
+          onRoleChange={handleRoleChange}
+          onDelete={(user) => setDeleteTarget(user)}
+          onResetPassword={(user) => setResetTarget(user)}
+          disableReset={resetTarget !== null}
+        />
+      )}
+
+      {/* Create user modal */}
+      {showCreateForm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-user-title"
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setShowCreateForm(false);
+          }}
+        >
+          <div className="rounded-lg bg-white p-6 shadow-xl max-w-md w-full">
+            <h2 id="create-user-title" className="text-lg font-semibold text-gray-900">Create User</h2>
+            <CreateUserForm
+              onSubmit={handleCreateSubmit}
+              onCancel={() => setShowCreateForm(false)}
+              isPending={createMutation.isPending}
             />
-          )}
-          {query.isSuccess && query.data.length === 0 && <EmptyState />}
-          {query.isSuccess && query.data.length > 0 && (
-            <UsersTable
-              users={query.data}
-              onRoleChange={handleRoleChange}
-              onDelete={(user) => setDeleteTarget(user)}
-              onResetPassword={(user) => setResetTarget(user)}
-              disableReset={resetTarget !== null}
-            />
-          )}
-        </>
+          </div>
+        </div>
       )}
 
       {createError && (
@@ -393,15 +428,26 @@ function AdminUsersPage() {
 
       {/* Delete confirmation dialog */}
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-title"
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setDeleteTarget(null);
+          }}
+        >
           <div className="rounded-lg bg-white p-6 shadow-xl">
-            <p className="text-sm text-gray-700">
+            <h2 id="delete-title" className="text-lg font-semibold text-gray-900">Delete User</h2>
+            <p className="mt-2 text-sm text-gray-700">
               Are you sure you want to delete{' '}
               <strong>{deleteTarget.email}</strong>?
             </p>
             <div className="mt-4 flex justify-end gap-3">
               <button
                 type="button"
+                ref={deleteCancelRef}
                 onClick={() => setDeleteTarget(null)}
                 className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
@@ -422,9 +468,18 @@ function AdminUsersPage() {
 
       {/* Reset password modal */}
       {resetTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reset-password-title"
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') handleResetCancel();
+          }}
+        >
           <div className="rounded-lg bg-white p-6 shadow-xl">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900">
+            <h2 id="reset-password-title" className="mb-4 text-lg font-semibold text-gray-900">
               Reset Password for {resetTarget.email}
             </h2>
             {resetError && (
@@ -434,6 +489,7 @@ function AdminUsersPage() {
             )}
             <div className="space-y-3">
               <input
+                ref={resetPwRef}
                 aria-label="New password"
                 type="password"
                 value={resetPw}
@@ -441,7 +497,7 @@ function AdminUsersPage() {
                 className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
               />
               <input
-                aria-label="Confirm"
+                aria-label="Confirm password"
                 type="password"
                 value={resetConfirm}
                 onChange={(e) => setResetConfirm(e.target.value)}
@@ -522,9 +578,9 @@ interface CreateUserFormProps {
 }
 
 /**
- * Inline form for creating a new user with email, password,
+ * Form for creating a new user with email, password,
  * confirm password, and role fields. Includes a generate button
- * for random password creation.
+ * for random password creation. Used inside a modal overlay.
  */
 function CreateUserForm({ onSubmit, onCancel, isPending }: CreateUserFormProps) {
   const [email, setEmail] = useState('');
@@ -532,6 +588,11 @@ function CreateUserForm({ onSubmit, onCancel, isPending }: CreateUserFormProps) 
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState('user');
   const [localError, setLocalError] = useState<string | null>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
 
   const handleGenerate = () => {
     const pw = generatePassword();
@@ -557,16 +618,16 @@ function CreateUserForm({ onSubmit, onCancel, isPending }: CreateUserFormProps) 
   };
 
   return (
-    <div className="mt-4 rounded-lg border border-dashed border-gray-300 p-4">
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <input
-          aria-label="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
-        />
+    <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+      <input
+        ref={emailRef}
+        aria-label="Email"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+        className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+      />
         <div className="flex gap-2">
           <input
             aria-label="Password"
@@ -623,7 +684,6 @@ function CreateUserForm({ onSubmit, onCancel, isPending }: CreateUserFormProps) 
           </button>
         </div>
       </form>
-    </div>
   );
 }
 
@@ -680,16 +740,16 @@ function UsersTable({ users, onRoleChange, onDelete, onResetPassword, disableRes
                 {formatDate(user.created_at)}
               </td>
               <td className="px-4 py-3">
-                {!disableReset && (
-                  <button
-                    type="button"
-                    aria-label={`Reset Password for ${user.email}`}
-                    onClick={() => onResetPassword(user)}
-                    className="mr-3 text-blue-600 hover:text-blue-800"
-                  >
-                    Reset Password
-                  </button>
-                )}
+                <button
+                  type="button"
+                  disabled={disableReset}
+                  aria-disabled={disableReset}
+                  aria-label={`Reset password for ${user.email}`}
+                  onClick={() => onResetPassword(user)}
+                  className={`text-sm ${disableReset ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:text-blue-800'}`}
+                >
+                  Reset Password
+                </button>
                 <button
                   type="button"
                   aria-label={`Delete ${user.email}`}

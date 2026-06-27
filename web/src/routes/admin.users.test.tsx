@@ -174,6 +174,19 @@ describe('AdminUsersPage', () => {
     });
   });
 
+  it('still shows Add User button when user list is empty', async () => {
+    mockFetch.mockResolvedValue(jsonResponse([]));
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/no users found/i)).toBeInTheDocument();
+    });
+
+    // Add User button should still be visible even with empty list
+    expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();
+  });
+
   // ── Error state ─────────────────────────────────────────────────────
 
   it('shows error banner when fetch fails', async () => {
@@ -382,12 +395,14 @@ describe('AdminUsersPage', () => {
 
     await user.click(screen.getByRole('button', { name: /add user/i }));
 
-    // Form fields should appear
+    // Form fields should appear in the modal
     await waitFor(() => {
-      expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/role/i)).toBeInTheDocument();
+      expect(screen.getByLabelText('Email')).toBeInTheDocument();
+      expect(screen.getByLabelText('Password')).toBeInTheDocument();
+      expect(screen.getByLabelText('Confirm password')).toBeInTheDocument();
+      // Use exact match to avoid conflicts with table role selects
+      const roleSelects = screen.getAllByLabelText('Role');
+      expect(roleSelects.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -625,7 +640,7 @@ describe('AdminUsersPage', () => {
 
     await user.type(screen.getByLabelText(/^new password$/i), 'newsecurepass12');
     await user.type(screen.getByLabelText(/^confirm/i), 'newsecurepass12');
-    await user.click(screen.getByRole('button', { name: /reset/i }));
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
 
     // Verify PUT was sent with correct body
     await waitFor(() => {
