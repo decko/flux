@@ -31,7 +31,7 @@ func (r *mockUserRepo) Create(_ context.Context, u model.User) error {
 	defer r.mu.Unlock()
 	for _, existing := range r.store {
 		if existing.Email == u.Email {
-			return errors.New("email already exists")
+			return repository.ErrDuplicateEmail
 		}
 	}
 	r.store[u.ID] = u
@@ -159,6 +159,9 @@ func TestAuthService_Register_DuplicateEmail(t *testing.T) {
 	_, err = svc.Register(ctx, "dup@example.com", "password456789")
 	if err == nil {
 		t.Fatal("expected error for duplicate email, got nil")
+	}
+	if !errors.Is(err, repository.ErrDuplicateEmail) {
+		t.Errorf("expected ErrDuplicateEmail, got %v", err)
 	}
 }
 

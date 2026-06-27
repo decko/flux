@@ -123,13 +123,6 @@ func TestAdminHandler_ListUsers(t *testing.T) {
 	if len(users) == 0 {
 		t.Error("expected non-empty user list")
 	}
-
-	// Verify that password_hash is never serialized in the response.
-	var raw map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err == nil {
-		// We can't decode the body twice, so just decode first user manually.
-		_ = raw
-	}
 }
 
 func TestAdminHandler_UpdateUserRole(t *testing.T) {

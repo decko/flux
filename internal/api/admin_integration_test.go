@@ -162,5 +162,59 @@ func TestAdminUserManagement_Smoke(t *testing.T) {
 		t.Errorf("after delete: got %d users, want 1", len(remaining))
 	}
 
+	// Step 9: Admin creates a new user via POST /api/v1/admin/users → 201.
+	createBody := `{"email":"new@flux.dev","password":"123456789012","role":"user"}`
+	createReq := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	resp7, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatalf("POST create user: %v", err)
+	}
+	defer func() { _ = resp7.Body.Close() }()
+	if resp7.StatusCode != http.StatusCreated {
+		t.Errorf("create user: got %d, want %d", resp7.StatusCode, http.StatusCreated)
+	}
+	var created model.User
+	if err := json.NewDecoder(resp7.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created user: %v", err)
+	}
+	if created.Email != "new@flux.dev" {
+		t.Errorf("created email = %q, want %q", created.Email, "new@flux.dev")
+	}
+	if created.ID == "" {
+		t.Error("created user ID should not be empty")
+	}
+	if created.PasswordHash != "" {
+		t.Error("created user PasswordHash should be empty in response")
+	}
+
+	// Step 10: Verify user count increased to 3.
+	listReq := authedRequest(http.MethodGet, ts.URL+"/api/v1/admin/users", nil)
+	resp8, err := http.DefaultClient.Do(listReq)
+	if err != nil {
+		t.Fatalf("GET users after create: %v", err)
+	}
+	defer func() { _ = resp8.Body.Close() }()
+	var allUsers []model.User
+	if err := json.NewDecoder(resp8.Body).Decode(&allUsers); err != nil {
+		t.Fatalf("decode users: %v", err)
+	}
+	if len(allUsers) != 2 {
+		t.Errorf("after create: got %d users, want 2 (admin + new user)", len(allUsers))
+	}
+
+	// Step 11: Admin resets password for the new user.
+	resetBody := `{"password":"newpassword1234"}`
+	resetReq := authedRequest(http.MethodPut, ts.URL+"/api/v1/admin/users/"+created.ID+"/password", strings.NewReader(resetBody))
+	resetReq.Header.Set("Content-Type", "application/json")
+	resp9, err := http.DefaultClient.Do(resetReq)
+	if err != nil {
+		t.Fatalf("PUT reset password: %v", err)
+	}
+	defer func() { _ = resp9.Body.Close() }()
+	if resp9.StatusCode != http.StatusOK {
+		t.Errorf("reset password: got %d, want %d", resp9.StatusCode, http.StatusOK)
+	}
+
 	t.Log("admin user management smoke test passed")
 }

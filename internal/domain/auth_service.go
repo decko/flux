@@ -48,7 +48,7 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (mod
 	if err := ValidatePassword(password); err != nil {
 		return model.User{}, err
 	}
-	if err := validateEmail(email); err != nil {
+	if err := ValidateEmail(email); err != nil {
 		return model.User{}, err
 	}
 
@@ -83,9 +83,9 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (mod
 	return user, nil
 }
 
-// validateEmail performs basic email format validation.
+// ValidateEmail performs basic email format validation.
 // It checks for the presence of "@" and a non-empty domain part.
-func validateEmail(email string) error {
+func ValidateEmail(email string) error {
 	parts := strings.SplitN(email, "@", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return fmt.Errorf("invalid email format")

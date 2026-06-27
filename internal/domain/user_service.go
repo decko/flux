@@ -152,6 +152,9 @@ func (s *UserService) CreateUser(ctx context.Context, actorID, email, password, 
 	if email == "" {
 		return model.User{}, fmt.Errorf("email is required")
 	}
+	if err := ValidateEmail(email); err != nil {
+		return model.User{}, err
+	}
 	if err := ValidatePassword(password); err != nil {
 		return model.User{}, err
 	}
