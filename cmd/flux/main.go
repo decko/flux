@@ -484,6 +484,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		return nil, nil, fmt.Errorf("no adapters available for project %s", projectID)
 	}
 	syncSvc := domain.NewSyncService(ticketRepo, prRepo, projectRepo, factory, syncInterval)
+	syncSvc.WithSyncAuditService(auditSvc)
 
 	// Wire trigger service if self_user is configured.
 	for _, o := range cfg.Orchestrators {

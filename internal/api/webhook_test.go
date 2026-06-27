@@ -121,6 +121,8 @@ func setupWebhookTestServer(t *testing.T) *Server {
 	pipelineRepo := repository.NewSQLitePipelineRunRepository(sdb)
 	triggerRepo := repository.NewSQLiteTriggerRuleRepository(sdb)
 	webhookSecretRepo := repository.NewSQLiteWebhookSecretRepository(sdb)
+	auditRepo := repository.NewSQLiteAuditRepository(sdb)
+	auditSvc := domain.NewAuditService(auditRepo)
 
 	projectSvc := domain.NewProjectService(projectRepo)
 	ticketSvc := domain.NewTicketService(ticketRepo)
@@ -133,6 +135,7 @@ func setupWebhookTestServer(t *testing.T) *Server {
 		WithPipelineService(pipelineSvc),
 		WithTriggerRuleRepo(triggerRepo),
 		WithWebhookSecretRepo(webhookSecretRepo),
+		WithAuditService(auditSvc),
 	)
 }
 
@@ -620,5 +623,140 @@ func TestWebhookGithub_UpdatesLastWebhookAt(t *testing.T) {
 	}
 	if time.Since(*p.LastWebhookAt) > 30*time.Second {
 		t.Errorf("last_webhook_at is too old: %v ago", time.Since(*p.LastWebhookAt))
+	}
+}
+
+// TestWebhookGithub_AuditEventOnCreate verifies that a webhook creating a
+// ticket also records an audit event with the correct action and metadata.
+func TestWebhookGithub_AuditEventOnCreate(t *testing.T) {
+	srv := setupWebhookTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	seedWebhookProject(t, srv)
+
+	payload := githubPayload("opened", "test-owner/test-repo", "testuser", nil)
+	sig := hmacSign(payload, "test-webhook-secret")
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		ts.URL+"/api/v1/webhooks/github", strings.NewReader(string(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", "issues")
+	req.Header.Set("X-Hub-Signature-256", sig)
+	req.Header.Set("X-GitHub-Delivery", "delivery-abc-123")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/webhooks/github: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	// Verify an audit event was recorded for ticket creation via webhook.
+	events, err := srv.auditSvc.List(context.Background(), repository.AuditFilter{
+		Action: string(model.AuditActionTicketCreatedWebhook),
+	})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d audit events, want 1", len(events))
+	}
+	if events[0].Action != model.AuditActionTicketCreatedWebhook {
+		t.Errorf("action = %q, want %q", events[0].Action, model.AuditActionTicketCreatedWebhook)
+	}
+	if events[0].ResourceType != "ticket" {
+		t.Errorf("resource_type = %q, want %q", events[0].ResourceType, "ticket")
+	}
+	if !strings.Contains(events[0].Metadata, "delivery=delivery-abc-123") {
+		t.Errorf("metadata = %q, want to contain delivery=delivery-abc-123", events[0].Metadata)
+	}
+	// Webhook events should have a system actor indicating the webhook origin.
+	if events[0].ActorID != "system:webhook" {
+		t.Errorf("actor_id = %q, want %q", events[0].ActorID, "system:webhook")
+	}
+}
+
+// TestWebhookGithub_AuditEventOnUpdate verifies that a second webhook for the
+// same issue records an update audit event (not a create).
+func TestWebhookGithub_AuditEventOnUpdate(t *testing.T) {
+	srv := setupWebhookTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	project := seedWebhookProject(t, srv)
+
+	payload := githubPayload("opened", "test-owner/test-repo", "testuser", nil)
+	sig := hmacSign(payload, "test-webhook-secret")
+
+	// First request: creates the ticket.
+	req1, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		ts.URL+"/api/v1/webhooks/github", strings.NewReader(string(payload)))
+	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("X-GitHub-Event", "issues")
+	req1.Header.Set("X-Hub-Signature-256", sig)
+	req1.Header.Set("X-GitHub-Delivery", "delivery-first")
+
+	resp1, err := http.DefaultClient.Do(req1)
+	if err != nil {
+		t.Fatalf("first POST /api/v1/webhooks/github: %v", err)
+	}
+	defer func() { _ = resp1.Body.Close() }()
+
+	if resp1.StatusCode != http.StatusOK {
+		t.Errorf("first request: got status %d, want %d", resp1.StatusCode, http.StatusOK)
+	}
+
+	// Second request: same issue, updates the existing ticket.
+	req2, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		ts.URL+"/api/v1/webhooks/github", strings.NewReader(string(payload)))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("X-GitHub-Event", "issues")
+	req2.Header.Set("X-Hub-Signature-256", sig)
+	req2.Header.Set("X-GitHub-Delivery", "delivery-second")
+
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("second POST /api/v1/webhooks/github: %v", err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+
+	if resp2.StatusCode != http.StatusOK {
+		t.Errorf("second request: got status %d, want %d", resp2.StatusCode, http.StatusOK)
+	}
+
+	// Verify we have both a create and an update audit event.
+	allEvents, err := srv.auditSvc.List(context.Background(), repository.AuditFilter{
+		ResourceType: "ticket",
+	})
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	if len(allEvents) != 2 {
+		t.Fatalf("got %d audit events, want 2 (create + update)", len(allEvents))
+	}
+	// Events are returned in DESC order (most recent first).
+	if allEvents[0].Action != model.AuditActionTicketUpdatedWebhook {
+		t.Errorf("first (most recent) action = %q, want %q",
+			allEvents[0].Action, model.AuditActionTicketUpdatedWebhook)
+	}
+	if allEvents[1].Action != model.AuditActionTicketCreatedWebhook {
+		t.Errorf("second action = %q, want %q",
+			allEvents[1].Action, model.AuditActionTicketCreatedWebhook)
+	}
+	// Second event's metadata should contain the second delivery ID.
+	if !strings.Contains(allEvents[0].Metadata, "delivery=delivery-second") {
+		t.Errorf("update metadata = %q, want to contain delivery=delivery-second", allEvents[0].Metadata)
+	}
+	// Verify the ticket actually exists.
+	tickets, err := srv.ticketSvc.List(context.Background(), repository.TicketFilter{ProjectID: project.ID})
+	if err != nil {
+		t.Fatalf("list tickets: %v", err)
+	}
+	if len(tickets) != 1 {
+		t.Errorf("got %d tickets, want 1", len(tickets))
 	}
 }

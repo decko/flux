@@ -11,6 +11,7 @@ import (
 	"github.com/decko/flux/internal/adapter/ticket"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
+	"github.com/decko/flux/pkg/authctx"
 )
 
 // ProjectSyncStatus holds the sync result for a single project.
@@ -50,6 +51,7 @@ type SyncService struct {
 	// Factory creates per-project adapters for sync.
 	Factory    AdapterFactory
 	triggerSvc *TriggerService
+	auditSvc   *AuditService
 	interval   time.Duration
 	logger     *slog.Logger
 
@@ -102,6 +104,12 @@ func NewSyncService(
 // evaluated against trigger rules after they are upserted.
 func (s *SyncService) WithTriggerService(svc *TriggerService) {
 	s.triggerSvc = svc
+}
+
+// WithSyncAuditService sets the AuditService for recording audit events
+// when tickets and pull requests are created or updated during sync.
+func (s *SyncService) WithSyncAuditService(audit *AuditService) {
+	s.auditSvc = audit
 }
 
 // Status returns the result of the last sync operation. It is safe
@@ -421,6 +429,12 @@ func (s *SyncService) updateTicket(ctx context.Context, existing model.Ticket, i
 	if err := s.TicketRepo.Update(ctx, existing); err != nil {
 		return fmt.Errorf("update ticket: %w", err)
 	}
+	if s.auditSvc != nil {
+		auditCtx := authctx.WithUserID(ctx, "system:sync")
+		if err := s.auditSvc.Record(auditCtx, model.AuditActionTicketUpdatedSync, "ticket", existing.ID, "origin=sync"); err != nil {
+			s.logger.Error("sync: failed to record ticket update audit event", "ticket_id", existing.ID, "error", err)
+		}
+	}
 	return nil
 }
 
@@ -432,6 +446,12 @@ func (s *SyncService) createTicket(ctx context.Context, t model.Ticket) error {
 	t.UpdatedAt = now
 	if err := s.TicketRepo.Create(ctx, t); err != nil {
 		return fmt.Errorf("create ticket: %w", err)
+	}
+	if s.auditSvc != nil {
+		auditCtx := authctx.WithUserID(ctx, "system:sync")
+		if err := s.auditSvc.Record(auditCtx, model.AuditActionTicketCreatedSync, "ticket", t.ID, "origin=sync"); err != nil {
+			s.logger.Error("sync: failed to record ticket create audit event", "ticket_id", t.ID, "error", err)
+		}
 	}
 	return nil
 }
@@ -449,6 +469,12 @@ func (s *SyncService) updatePR(ctx context.Context, existing model.PullRequest, 
 	if err := s.PRRepo.Update(ctx, existing); err != nil {
 		return fmt.Errorf("update PR: %w", err)
 	}
+	if s.auditSvc != nil {
+		auditCtx := authctx.WithUserID(ctx, "system:sync")
+		if err := s.auditSvc.Record(auditCtx, model.AuditActionPRUpdatedSync, "pull_request", existing.ID, "origin=sync"); err != nil {
+			s.logger.Error("sync: failed to record PR update audit event", "pr_id", existing.ID, "error", err)
+		}
+	}
 	return nil
 }
 
@@ -460,6 +486,12 @@ func (s *SyncService) createPR(ctx context.Context, pr model.PullRequest) error 
 	pr.UpdatedAt = now
 	if err := s.PRRepo.Create(ctx, pr); err != nil {
 		return fmt.Errorf("create PR: %w", err)
+	}
+	if s.auditSvc != nil {
+		auditCtx := authctx.WithUserID(ctx, "system:sync")
+		if err := s.auditSvc.Record(auditCtx, model.AuditActionPRCreatedSync, "pull_request", pr.ID, "origin=sync"); err != nil {
+			s.logger.Error("sync: failed to record PR create audit event", "pr_id", pr.ID, "error", err)
+		}
 	}
 	return nil
 }
