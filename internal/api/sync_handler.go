@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -61,7 +62,11 @@ func (s *Server) handleSyncTrigger(w http.ResponseWriter, r *http.Request) {
 	// Fire-and-forget sync. Runs in background to avoid blocking the request.
 	go func() {
 		defer s.syncMu.Unlock()
-		_ = s.syncSvc.SyncNow(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if err := s.syncSvc.SyncNow(ctx); err != nil {
+			slog.WarnContext(ctx, "sync failed", "error", err)
+		}
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
