@@ -22,6 +22,7 @@ import (
 	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
+	"github.com/decko/flux/pkg/authctx"
 )
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -124,7 +125,7 @@ func setupWebhookTestServer(t *testing.T) *Server {
 	auditRepo := repository.NewSQLiteAuditRepository(sdb)
 	auditSvc := domain.NewAuditService(auditRepo)
 
-	projectSvc := domain.NewProjectService(projectRepo)
+	projectSvc := domain.NewProjectService(projectRepo, domain.WithAuditService(auditSvc))
 	ticketSvc := domain.NewTicketService(ticketRepo)
 	pipelineSvc := domain.NewPipelineRunService(pipelineRepo)
 
@@ -158,7 +159,7 @@ func seedWebhookProject(t *testing.T, srv *Server) model.Project {
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}
-	if err := srv.projectSvc.Create(context.Background(), p); err != nil {
+	if err := srv.projectSvc.Create(authctx.WithUserID(context.Background(), "test-seeder"), p); err != nil {
 		t.Fatalf("seed project: %v", err)
 	}
 	return p
