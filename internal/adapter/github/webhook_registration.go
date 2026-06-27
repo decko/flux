@@ -95,6 +95,51 @@ func DeleteWebhook(ctx context.Context, appAuth *AppAuth, installationID int, ow
 	return nil
 }
 
+// UpdateWebhook updates the config of an existing GitHub webhook (PATCH). The
+// config is replaced with the given webhookURL and secret. Returns an error if
+// the webhook does not exist or the API call fails.
+func UpdateWebhook(ctx context.Context, appAuth *AppAuth, installationID int, owner, repo string, webhookID int, webhookURL, secret string) error {
+	token, err := appAuth.GetToken(ctx, strconv.Itoa(installationID))
+	if err != nil {
+		return fmt.Errorf("webhook update: get token: %w", err)
+	}
+
+	payload := map[string]interface{}{
+		"config": map[string]interface{}{
+			"url":          webhookURL,
+			"content_type": "json",
+			"secret":       secret,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("webhook update: marshal payload: %w", err)
+	}
+
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/hooks/%d", owner, repo, webhookID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("webhook update: create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("webhook update: execute request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("webhook update: HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
 // VerifyWebhook checks if a webhook still exists. Returns nil on 200.
 func VerifyWebhook(ctx context.Context, appAuth *AppAuth, installationID int, owner, repo string, webhookID int) error {
 	token, err := appAuth.GetToken(ctx, strconv.Itoa(installationID))

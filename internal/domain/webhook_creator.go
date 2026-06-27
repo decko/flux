@@ -36,6 +36,20 @@ type WebhookCreator struct {
 	webhookURLFn func() string
 }
 
+// GitHubWebhookUpdater is a concrete implementation of WebhookUpdater that
+// uses a *github.AppAuth to call the GitHub API.
+type GitHubWebhookUpdater struct {
+	AppAuth *github.AppAuth
+}
+
+// UpdateWebhook updates the config of an existing GitHub webhook.
+func (u *GitHubWebhookUpdater) UpdateWebhook(ctx context.Context, installationID int, owner, repo string, webhookID int, webhookURL, secret string) error {
+	if u.AppAuth == nil {
+		return fmt.Errorf("github app not configured")
+	}
+	return github.UpdateWebhook(ctx, u.AppAuth, installationID, owner, repo, webhookID, webhookURL, secret)
+}
+
 // NewWebhookCreator creates a new WebhookCreator. The webhookURLFn is called
 // to get the public URL for webhook delivery (defaults to reading
 // FLUX_WEBHOOK_URL from the environment).

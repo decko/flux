@@ -60,6 +60,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/audit-events", s.handleAuditEvents)
 				r.Get("/audit/integrity", s.handleAuditIntegrity)
 				r.Delete("/projects/{id}", s.handleDeleteProject)
+				r.Post("/projects/{id}/webhook/rotate-secret", s.handleRotateWebhookSecret)
 				r.Post("/projects/{id}/trigger-rules", s.handleCreateTriggerRule)
 				r.Put("/projects/{id}/trigger-rules/{ruleId}", s.handleUpdateTriggerRule)
 				r.Delete("/projects/{id}/trigger-rules/{ruleId}", s.handleDeleteTriggerRule)

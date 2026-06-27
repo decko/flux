@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -417,4 +419,272 @@ func TestProjectService_AuditNil(t *testing.T) {
 
 	// Delete with nil audit.
 	must(t, svc.Delete(ctx, "proj-noaudit"))
+}
+
+// ─── RotateWebhookSecret Tests ──────────────────────────────────────────────
+
+// mockSecretRepo is a thread-safe in-memory implementation of webhookSecretRepo.
+type mockSecretRepo struct {
+	mu      sync.Mutex
+	secrets map[string]string
+}
+
+func newMockSecretRepo() *mockSecretRepo {
+	return &mockSecretRepo{secrets: make(map[string]string)}
+}
+
+func (r *mockSecretRepo) Set(_ context.Context, repoURL, secret string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.secrets[repoURL] = secret
+	return nil
+}
+
+// mockWebhookUpdater is a test implementation of webhookUpdater that records
+// calls and can be configured to return errors.
+type mockWebhookUpdater struct {
+	mu        sync.Mutex
+	calls     []string
+	updateErr error
+}
+
+func newMockWebhookUpdater() *mockWebhookUpdater {
+	return &mockWebhookUpdater{}
+}
+
+func (u *mockWebhookUpdater) UpdateWebhook(_ context.Context, installationID int, owner, repo string, webhookID int, webhookURL, secret string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.calls = append(u.calls, fmt.Sprintf("update:%s/%s:%d", owner, repo, webhookID))
+	return u.updateErr
+}
+
+// TestRotateWebhookSecret_NoWebhookUpdater verifies that rotation fails when
+// the webhook updater is not configured.
+func TestRotateWebhookSecret_NoWebhookUpdater(t *testing.T) {
+	repo := newMockProjectRepo()
+	secretRepo := newMockSecretRepo()
+	svc := domain.NewProjectService(repo, domain.WithSecretRepo(secretRepo))
+	ctx := context.Background()
+
+	p := testProject("proj-1", "test-project")
+	must(t, svc.Create(ctx, p))
+
+	err := svc.RotateWebhookSecret(ctx, "proj-1")
+	if !errors.Is(err, domain.ErrWebhookNotConfigured) {
+		t.Fatalf("expected ErrWebhookNotConfigured, got %v", err)
+	}
+}
+
+// TestRotateWebhookSecret_NoSecretRepo verifies that rotation fails when the
+// webhook secret repository is not configured.
+func TestRotateWebhookSecret_NoSecretRepo(t *testing.T) {
+	repo := newMockProjectRepo()
+	svc := domain.NewProjectService(repo)
+	ctx := context.Background()
+
+	p := testProject("proj-1", "test-project")
+	must(t, svc.Create(ctx, p))
+
+	err := svc.RotateWebhookSecret(ctx, "proj-1")
+	if !errors.Is(err, domain.ErrWebhookNotConfigured) {
+		t.Fatalf("expected ErrWebhookNotConfigured, got %v", err)
+	}
+}
+
+// TestRotateWebhookSecret_NotFound verifies that rotation fails when the
+// project does not exist.
+func TestRotateWebhookSecret_NotFound(t *testing.T) {
+	repo := newMockProjectRepo()
+	secretRepo := newMockSecretRepo()
+	upd := newMockWebhookUpdater()
+	svc := domain.NewProjectService(repo,
+		domain.WithSecretRepo(secretRepo),
+		domain.WithWebhookUpdater(upd),
+	)
+	ctx := context.Background()
+
+	err := svc.RotateWebhookSecret(ctx, "nonexistent")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// TestRotateWebhookSecret_NoWebhookID verifies that rotation fails when the
+// project has no webhook ID (webhook was never registered).
+func TestRotateWebhookSecret_NoWebhookID(t *testing.T) {
+	orig := os.Getenv("FLUX_WEBHOOK_URL")
+	t.Cleanup(func() {
+		if orig != "" {
+			_ = os.Setenv("FLUX_WEBHOOK_URL", orig)
+		} else {
+			_ = os.Unsetenv("FLUX_WEBHOOK_URL")
+		}
+	})
+	_ = os.Setenv("FLUX_WEBHOOK_URL", "https://example.com/webhooks")
+
+	repo := newMockProjectRepo()
+	secretRepo := newMockSecretRepo()
+	upd := newMockWebhookUpdater()
+	svc := domain.NewProjectService(repo,
+		domain.WithSecretRepo(secretRepo),
+		domain.WithWebhookUpdater(upd),
+	)
+	ctx := context.Background()
+
+	p := testProject("proj-1", "test-project")
+	must(t, svc.Create(ctx, p))
+
+	err := svc.RotateWebhookSecret(ctx, "proj-1")
+	if !errors.Is(err, domain.ErrNoWebhookRegistered) {
+		t.Fatalf("expected ErrNoWebhookRegistered, got %v", err)
+	}
+}
+
+// TestRotateWebhookSecret_NoGitHubAdapter verifies that rotation fails when
+// the project has no GitHub adapter configured.
+func TestRotateWebhookSecret_NoGitHubAdapter(t *testing.T) {
+	orig := os.Getenv("FLUX_WEBHOOK_URL")
+	t.Cleanup(func() {
+		if orig != "" {
+			_ = os.Setenv("FLUX_WEBHOOK_URL", orig)
+		} else {
+			_ = os.Unsetenv("FLUX_WEBHOOK_URL")
+		}
+	})
+	_ = os.Setenv("FLUX_WEBHOOK_URL", "https://example.com/webhooks")
+
+	repo := newMockProjectRepo()
+	secretRepo := newMockSecretRepo()
+	upd := newMockWebhookUpdater()
+	svc := domain.NewProjectService(repo,
+		domain.WithSecretRepo(secretRepo),
+		domain.WithWebhookUpdater(upd),
+	)
+	ctx := context.Background()
+
+	// testProject creates a project with empty adapters slice.
+	p := testProject("proj-1", "test-project")
+	p.WebhookID = 42
+	must(t, svc.Create(ctx, p))
+
+	err := svc.RotateWebhookSecret(ctx, "proj-1")
+	if !errors.Is(err, domain.ErrNoGitHubAdapter) {
+		t.Fatalf("expected ErrNoGitHubAdapter, got %v", err)
+	}
+}
+
+// TestRotateWebhookSecret_WebhookURLNotSet verifies that rotation fails when
+// FLUX_WEBHOOK_URL is not set.
+func TestRotateWebhookSecret_WebhookURLNotSet(t *testing.T) {
+	// Unset FLUX_WEBHOOK_URL if set.
+	orig := os.Getenv("FLUX_WEBHOOK_URL")
+	t.Cleanup(func() {
+		if orig != "" {
+			_ = os.Setenv("FLUX_WEBHOOK_URL", orig)
+		} else {
+			_ = os.Unsetenv("FLUX_WEBHOOK_URL")
+		}
+	})
+	_ = os.Unsetenv("FLUX_WEBHOOK_URL")
+
+	repo := newMockProjectRepo()
+	secretRepo := newMockSecretRepo()
+	upd := newMockWebhookUpdater()
+	svc := domain.NewProjectService(repo,
+		domain.WithSecretRepo(secretRepo),
+		domain.WithWebhookUpdater(upd),
+	)
+	ctx := context.Background()
+
+	p := testProject("proj-1", "test-project")
+	p.WebhookID = 42
+	p.Adapters = []model.AdapterConfig{
+		{Type: "github", Config: map[string]string{"owner": "owner", "repo": "repo"}},
+	}
+	must(t, svc.Create(ctx, p))
+
+	err := svc.RotateWebhookSecret(ctx, "proj-1")
+	if !errors.Is(err, domain.ErrWebhookURLNotSet) {
+		t.Fatalf("expected ErrWebhookURLNotSet, got %v", err)
+	}
+}
+
+// TestRotateWebhookSecret_Success verifies that a full secret rotation succeeds,
+// stores the new secret, and records an audit event.
+func TestRotateWebhookSecret_Success(t *testing.T) {
+	// Set FLUX_WEBHOOK_URL.
+	orig := os.Getenv("FLUX_WEBHOOK_URL")
+	t.Cleanup(func() {
+		if orig != "" {
+			_ = os.Setenv("FLUX_WEBHOOK_URL", orig)
+		} else {
+			_ = os.Unsetenv("FLUX_WEBHOOK_URL")
+		}
+	})
+	_ = os.Setenv("FLUX_WEBHOOK_URL", "https://example.com/webhooks")
+
+	auditRepo := setupAuditDB(t)
+	auditSvc := domain.NewAuditService(auditRepo)
+	projectRepo := newMockProjectRepo()
+	secretRepo := newMockSecretRepo()
+	upd := newMockWebhookUpdater()
+	svc := domain.NewProjectService(projectRepo,
+		domain.WithSecretRepo(secretRepo),
+		domain.WithWebhookUpdater(upd),
+		domain.WithAuditService(auditSvc),
+	)
+	ctx := authctx.WithUserID(context.Background(), "test-admin")
+
+	p := testProject("proj-secret", "rotate-test")
+	p.WebhookID = 42
+	p.InstallationID = 1
+	p.RepoURL = "https://github.com/owner/repo"
+	p.Adapters = []model.AdapterConfig{
+		{Type: "github", Config: map[string]string{"owner": "owner", "repo": "repo"}},
+	}
+	must(t, svc.Create(ctx, p))
+
+	err := svc.RotateWebhookSecret(ctx, "proj-secret")
+	must(t, err)
+
+	// Verify the updater was called.
+	if len(upd.calls) != 1 {
+		t.Fatalf("expected 1 updater call, got %d", len(upd.calls))
+	}
+	expectedCall := "update:owner/repo:42"
+	if upd.calls[0] != expectedCall {
+		t.Errorf("updater call = %q, want %q", upd.calls[0], expectedCall)
+	}
+
+	// Verify the secret was changed.
+	secretRepo.mu.Lock()
+	newSecret := secretRepo.secrets[p.RepoURL]
+	secretRepo.mu.Unlock()
+	if newSecret == "" {
+		t.Fatal("expected secret to be stored")
+	}
+	if len(newSecret) != 64 { // 32 bytes hex-encoded
+		t.Errorf("expected secret length 64 (32 bytes hex), got %d", len(newSecret))
+	}
+
+	// Verify audit event was recorded.
+	events, err := auditRepo.List(context.Background(), repository.AuditFilter{
+		ResourceType: "project",
+		ResourceID:   "proj-secret",
+	})
+	must(t, err)
+	var rotationEvent bool
+	for _, e := range events {
+		if e.Action == model.AuditActionWebhookSecretRotated {
+			rotationEvent = true
+			if e.ActorID != "test-admin" {
+				t.Errorf("ActorID = %q, want %q", e.ActorID, "test-admin")
+			}
+			break
+		}
+	}
+	if !rotationEvent {
+		t.Error("no webhook.secret_rotated audit event found")
+	}
 }
