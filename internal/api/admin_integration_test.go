@@ -39,7 +39,9 @@ func TestAdminUserManagement_Smoke(t *testing.T) {
 
 	// 2. Create repos and services.
 	userRepo := repository.NewSQLiteUserRepository(sdb)
-	userSvc := domain.NewUserService(userRepo)
+	auditRepo := repository.NewSQLiteAuditRepository(sdb)
+	auditSvc := domain.NewAuditService(auditRepo)
+	userSvc := domain.NewUserService(userRepo, domain.WithUserAuditService(auditSvc))
 
 	// Seed an admin user.
 	admin := model.User{
@@ -69,6 +71,7 @@ func TestAdminUserManagement_Smoke(t *testing.T) {
 	srv := NewServer(
 		WithJWTSecret(testJWTSecretBytes),
 		WithUserService(userSvc),
+		WithAuditService(auditSvc),
 	)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
@@ -160,6 +163,116 @@ func TestAdminUserManagement_Smoke(t *testing.T) {
 	}
 	if len(remaining) != 1 {
 		t.Errorf("after delete: got %d users, want 1", len(remaining))
+	}
+
+	// Step 9: Admin creates a new user via POST /api/v1/admin/users → 201.
+	createBody := `{"email":"new@flux.dev","password":"123456789012","role":"user"}`
+	createReq := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	resp7, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatalf("POST create user: %v", err)
+	}
+	defer func() { _ = resp7.Body.Close() }()
+	if resp7.StatusCode != http.StatusCreated {
+		t.Errorf("create user: got %d, want %d", resp7.StatusCode, http.StatusCreated)
+	}
+	var created model.User
+	if err := json.NewDecoder(resp7.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created user: %v", err)
+	}
+	if created.Email != "new@flux.dev" {
+		t.Errorf("created email = %q, want %q", created.Email, "new@flux.dev")
+	}
+	if created.ID == "" {
+		t.Error("created user ID should not be empty")
+	}
+	if created.PasswordHash != "" {
+		t.Error("created user PasswordHash should be empty in response")
+	}
+
+	// Step 9b: Verify user.created audit event was recorded.
+	auditReq := authedRequest(http.MethodGet, ts.URL+"/api/v1/audit-events", nil)
+	auditResp, err := http.DefaultClient.Do(auditReq)
+	if err != nil {
+		t.Fatalf("GET audit events: %v", err)
+	}
+	defer func() { _ = auditResp.Body.Close() }()
+	if auditResp.StatusCode != http.StatusOK {
+		t.Fatalf("get audit: got %d, want %d", auditResp.StatusCode, http.StatusOK)
+	}
+	var events []map[string]interface{}
+	if err := json.NewDecoder(auditResp.Body).Decode(&events); err != nil {
+		t.Fatalf("decode audit: %v", err)
+	}
+	var foundCreated bool
+	for _, e := range events {
+		if action, ok := e["action"].(string); ok {
+			if action == "user.created" {
+				foundCreated = true
+				if actor, ok := e["actor_id"].(string); !ok || actor == "" {
+					t.Error("user.created audit event missing actor_id")
+				}
+			}
+		}
+	}
+	if !foundCreated {
+		t.Error("expected user.created audit event after POST /admin/users")
+	}
+
+	// Step 10: Verify user count increased to 3.
+	listReq := authedRequest(http.MethodGet, ts.URL+"/api/v1/admin/users", nil)
+	resp8, err := http.DefaultClient.Do(listReq)
+	if err != nil {
+		t.Fatalf("GET users after create: %v", err)
+	}
+	defer func() { _ = resp8.Body.Close() }()
+	var allUsers []model.User
+	if err := json.NewDecoder(resp8.Body).Decode(&allUsers); err != nil {
+		t.Fatalf("decode users: %v", err)
+	}
+	if len(allUsers) != 2 {
+		t.Errorf("after create: got %d users, want 2 (admin + new user)", len(allUsers))
+	}
+
+	// Step 11: Admin resets password for the new user.
+	resetBody := `{"password":"newpassword1234"}`
+	resetReq := authedRequest(http.MethodPut, ts.URL+"/api/v1/admin/users/"+created.ID+"/password", strings.NewReader(resetBody))
+	resetReq.Header.Set("Content-Type", "application/json")
+	resp9, err := http.DefaultClient.Do(resetReq)
+	if err != nil {
+		t.Fatalf("PUT reset password: %v", err)
+	}
+	defer func() { _ = resp9.Body.Close() }()
+	if resp9.StatusCode != http.StatusOK {
+		t.Errorf("reset password: got %d, want %d", resp9.StatusCode, http.StatusOK)
+	}
+
+	// Step 11b: Verify user.password_reset audit event was recorded.
+	auditReq2 := authedRequest(http.MethodGet, ts.URL+"/api/v1/audit-events", nil)
+	auditResp2, err := http.DefaultClient.Do(auditReq2)
+	if err != nil {
+		t.Fatalf("GET audit events (after reset): %v", err)
+	}
+	defer func() { _ = auditResp2.Body.Close() }()
+	if auditResp2.StatusCode != http.StatusOK {
+		t.Fatalf("get audit after reset: got %d, want %d", auditResp2.StatusCode, http.StatusOK)
+	}
+	var events2 []map[string]interface{}
+	if err := json.NewDecoder(auditResp2.Body).Decode(&events2); err != nil {
+		t.Fatalf("decode audit after reset: %v", err)
+	}
+	var foundReset bool
+	for _, e := range events2 {
+		if action, ok := e["action"].(string); ok && action == "user.password_reset" {
+			foundReset = true
+			if actor, ok := e["actor_id"].(string); !ok || actor == "" {
+				t.Error("user.password_reset audit event missing actor_id")
+			}
+		}
+	}
+	if !foundReset {
+		t.Error("expected user.password_reset audit event after PUT /admin/users/{id}/password")
 	}
 
 	t.Log("admin user management smoke test passed")

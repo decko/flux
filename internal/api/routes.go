@@ -72,7 +72,9 @@ func (s *Server) registerRoutes() {
 			r.Route("/admin", func(r chi.Router) {
 				r.Use(RequireRole("admin"))
 				r.Get("/users", s.handleListUsers)
+				r.Post("/users", s.handleCreateUser)
 				r.Put("/users/{id}/role", s.handleUpdateUserRole)
+				r.Put("/users/{id}/password", s.handleResetPassword)
 				r.Delete("/users/{id}", s.handleDeleteUser)
 			})
 		})

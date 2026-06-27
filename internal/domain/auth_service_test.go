@@ -31,7 +31,7 @@ func (r *mockUserRepo) Create(_ context.Context, u model.User) error {
 	defer r.mu.Unlock()
 	for _, existing := range r.store {
 		if existing.Email == u.Email {
-			return errors.New("email already exists")
+			return repository.ErrDuplicateEmail
 		}
 	}
 	r.store[u.ID] = u
@@ -151,14 +151,17 @@ func TestAuthService_Register_DuplicateEmail(t *testing.T) {
 	svc := domain.NewAuthService(repo, []byte("test-secret"))
 	ctx := context.Background()
 
-	_, err := svc.Register(ctx, "dup@example.com", "pass123")
+	_, err := svc.Register(ctx, "dup@example.com", "password123456")
 	if err != nil {
 		t.Fatalf("first register returned error: %v", err)
 	}
 
-	_, err = svc.Register(ctx, "dup@example.com", "pass456")
+	_, err = svc.Register(ctx, "dup@example.com", "password456789")
 	if err == nil {
 		t.Fatal("expected error for duplicate email, got nil")
+	}
+	if !errors.Is(err, repository.ErrDuplicateEmail) {
+		t.Errorf("expected ErrDuplicateEmail, got %v", err)
 	}
 }
 
@@ -192,12 +195,12 @@ func TestAuthService_Login(t *testing.T) {
 	svc := domain.NewAuthService(repo, []byte("test-secret"))
 	ctx := context.Background()
 
-	_, err := svc.Register(ctx, "login@example.com", "myPassword1")
+	_, err := svc.Register(ctx, "login@example.com", "myPassword12345")
 	if err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}
 
-	token, err := svc.Login(ctx, "login@example.com", "myPassword1")
+	token, err := svc.Login(ctx, "login@example.com", "myPassword12345")
 	if err != nil {
 		t.Fatalf("Login returned error: %v", err)
 	}
@@ -238,12 +241,12 @@ func TestAuthService_RefreshToken(t *testing.T) {
 	svc := domain.NewAuthService(repo, []byte("test-secret"))
 	ctx := context.Background()
 
-	user, err := svc.Register(ctx, "refresh@example.com", "myPassword1")
+	user, err := svc.Register(ctx, "refresh@example.com", "myPassword12345")
 	if err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}
 
-	token, err := svc.Login(ctx, "refresh@example.com", "myPassword1")
+	token, err := svc.Login(ctx, "refresh@example.com", "myPassword12345")
 	if err != nil {
 		t.Fatalf("Login returned error: %v", err)
 	}
@@ -286,6 +289,19 @@ func TestAuthService_RefreshToken_ExpiredToken(t *testing.T) {
 	_, err := svc.RefreshToken(ctx, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiZXhwIjoiMTUxNjIzOTAyMn0.tampered")
 	if err == nil {
 		t.Fatal("expected error for tampered token, got nil")
+	}
+}
+
+// ─── TestAuthService_Register_ShortPassword ───────────────────────────
+
+func TestAuthService_Register_ShortPassword(t *testing.T) {
+	repo := newMockUserRepo()
+	svc := domain.NewAuthService(repo, []byte("test-secret"))
+	ctx := context.Background()
+
+	_, err := svc.Register(ctx, "user@example.com", "short")
+	if err == nil {
+		t.Fatal("expected error for short password, got nil")
 	}
 }
 

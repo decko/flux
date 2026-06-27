@@ -2,11 +2,25 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/decko/flux/internal/model"
 	"github.com/decko/flux/internal/repository"
 )
+
+// ValidatePassword checks that a password meets the minimum strength requirements.
+// Password must be at least 12 characters long.
+func ValidatePassword(password string) error {
+	if len(password) < 12 {
+		return fmt.Errorf("invalid password: must be at least 12 characters")
+	}
+	return nil
+}
 
 // UserService provides business logic for user management operations
 // such as listing users, updating roles, and deleting users.
@@ -124,4 +138,109 @@ func (s *UserService) DeleteUser(ctx context.Context, actorID, targetID string) 
 	}
 
 	return nil
+}
+
+// CreateUser creates a new user with the given email, password, and role.
+// Password is hashed with bcrypt before storage. Guards:
+//   - email must be present
+//   - password must pass ValidatePassword (12+ chars)
+//   - role must be "admin" or "user"
+//   - email must not already exist
+//
+// PasswordHash is cleared on the returned user. Audits "user.created".
+func (s *UserService) CreateUser(ctx context.Context, actorID, email, password, role string) (model.User, error) {
+	if email == "" {
+		return model.User{}, fmt.Errorf("email is required")
+	}
+	if err := ValidateEmail(email); err != nil {
+		return model.User{}, err
+	}
+	if err := ValidatePassword(password); err != nil {
+		return model.User{}, err
+	}
+	if role != "admin" && role != "user" {
+		return model.User{}, fmt.Errorf("invalid role: %s", role)
+	}
+
+	// Check for duplicate email.
+	if _, err := s.userRepo.GetByEmail(ctx, email); !errors.Is(err, repository.ErrNotFound) {
+		if err == nil {
+			return model.User{}, repository.ErrDuplicateEmail
+		}
+		return model.User{}, fmt.Errorf("check email: %w", err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return model.User{}, fmt.Errorf("hashing password: %w", err)
+	}
+
+	user := model.User{
+		ID:           uuid.New().String(),
+		Email:        email,
+		PasswordHash: string(hash),
+		Role:         role,
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	if err := s.userRepo.Create(ctx, user); err != nil {
+		if errors.Is(err, repository.ErrDuplicateEmail) {
+			return model.User{}, err
+		}
+		return model.User{}, fmt.Errorf("create user: %w", err)
+	}
+
+	// Audit after mutation: if Record fails, the user still exists which
+	// may lead to retry creating a duplicate. The DB unique constraint on
+	// email catches this, but the error message is misleading (409 instead
+	// of 500). Accepted trade-off for now.
+	if s.auditSvc != nil {
+		if err := s.auditSvc.Record(ctx, "user.created", "user", user.ID,
+			fmt.Sprintf("actor=%q email=%q role=%q", actorID, email, role)); err != nil {
+			return model.User{}, fmt.Errorf("create user: %w", err)
+		}
+	}
+
+	user.PasswordHash = ""
+	return user, nil
+}
+
+// ResetPassword resets the password for the target user. The new password is
+// hashed with bcrypt before storage. Guards:
+//   - new password must pass ValidatePassword (12+ chars)
+//   - target user must exist
+//
+// PasswordHash is cleared on the returned user. Audits "user.password_reset".
+func (s *UserService) ResetPassword(ctx context.Context, actorID, targetID, newPassword string) (model.User, error) {
+	if err := ValidatePassword(newPassword); err != nil {
+		return model.User{}, err
+	}
+
+	target, err := s.userRepo.GetByID(ctx, targetID)
+	if err != nil {
+		return model.User{}, fmt.Errorf("get target user: %w", err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return model.User{}, fmt.Errorf("hashing password: %w", err)
+	}
+
+	target.PasswordHash = string(hash)
+
+	if err := s.userRepo.Update(ctx, target); err != nil {
+		return model.User{}, fmt.Errorf("update user: %w", err)
+	}
+
+	// Audit after mutation: same trade-off as CreateUser — if Record fails,
+	// the password is already changed. Accepted risk.
+	if s.auditSvc != nil {
+		if err := s.auditSvc.Record(ctx, "user.password_reset", "user", targetID,
+			fmt.Sprintf("actor=%q", actorID)); err != nil {
+			return model.User{}, fmt.Errorf("reset password: %w", err)
+		}
+	}
+
+	target.PasswordHash = ""
+	return target, nil
 }

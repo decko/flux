@@ -123,13 +123,6 @@ func TestAdminHandler_ListUsers(t *testing.T) {
 	if len(users) == 0 {
 		t.Error("expected non-empty user list")
 	}
-
-	// Verify that password_hash is never serialized in the response.
-	var raw map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err == nil {
-		// We can't decode the body twice, so just decode first user manually.
-		_ = raw
-	}
 }
 
 func TestAdminHandler_UpdateUserRole(t *testing.T) {
@@ -294,5 +287,282 @@ func TestAdminHandler_DeleteUser_Forbidden(t *testing.T) {
 
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+// ─── TestAdminHandler_CreateUser ──────────────────────────────────────
+
+func TestAdminHandler_CreateUser(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"email":"new@test.com","password":"123456789012","role":"user"}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/admin/users: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+
+	var user model.User
+	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+		t.Fatalf("decode user: %v", err)
+	}
+	if user.ID == "" {
+		t.Error("expected non-empty user ID")
+	}
+	if user.Email != "new@test.com" {
+		t.Errorf("got email %q, want %q", user.Email, "new@test.com")
+	}
+	if user.Role != "user" {
+		t.Errorf("got role %q, want %q", user.Role, "user")
+	}
+	if user.PasswordHash != "" {
+		t.Error("PasswordHash should be empty in response (json:\"-\")")
+	}
+}
+
+func TestAdminHandler_CreateUser_Duplicate(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"email":"dupe@test.com","password":"123456789012","role":"user"}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("first POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201 first time, got %d", resp.StatusCode)
+	}
+
+	// Duplicate request.
+	req2 := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(body))
+	req2.Header.Set("Content-Type", "application/json")
+
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("second POST: %v", err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+
+	if resp2.StatusCode != http.StatusConflict {
+		t.Errorf("got status %d, want %d", resp2.StatusCode, http.StatusConflict)
+	}
+}
+
+func TestAdminHandler_CreateUser_InvalidRole(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"email":"new@test.com","password":"123456789012","role":"superadmin"}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/admin/users: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestAdminHandler_CreateUser_ShortPassword(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"email":"new@test.com","password":"short","role":"user"}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/admin/users: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestAdminHandler_CreateUser_Unauthorized(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"email":"new@test.com","password":"123456789012","role":"user"}`
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/admin/users (no auth): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestAdminHandler_CreateUser_Forbidden(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"email":"new@test.com","password":"123456789012","role":"user"}`
+	req := nonAdminRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/admin/users (non-admin): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+// ─── TestAdminHandler_ResetPassword ───────────────────────────────────
+
+func TestAdminHandler_ResetPassword(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"password":"newpass123456"}`
+	req := authedRequest(http.MethodPut, ts.URL+"/api/v1/admin/users/user-1/password", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/v1/admin/users/user-1/password: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
+func TestAdminHandler_ResetPassword_NotFound(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"password":"newpass123456"}`
+	req := authedRequest(http.MethodPut, ts.URL+"/api/v1/admin/users/nonexistent/password", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/v1/admin/users/nonexistent/password: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestAdminHandler_ResetPassword_ShortPassword(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"password":"short"}`
+	req := authedRequest(http.MethodPut, ts.URL+"/api/v1/admin/users/user-1/password", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/v1/admin/users/user-1/password (short): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestAdminHandler_ResetPassword_Unauthorized(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"password":"newpass123456"}`
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPut, ts.URL+"/api/v1/admin/users/user-1/password", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/v1/admin/users/user-1/password (no auth): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestAdminHandler_ResetPassword_Forbidden(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"password":"newpass123456"}`
+	req := nonAdminRequest(http.MethodPut, ts.URL+"/api/v1/admin/users/user-1/password", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT /api/v1/admin/users/user-1/password (non-admin): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+// TestAdminHandler_CreateUser_InvalidEmail verifies that an invalid email
+// format (missing @ sign) returns 400 Bad Request.
+func TestAdminHandler_CreateUser_InvalidEmail(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"email":"not-an-email","password":"123456789012","role":"user"}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/admin/users (invalid email): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadRequest)
 	}
 }

@@ -15,6 +15,9 @@ func serviceError(err error) (int, string) {
 	if errors.Is(err, repository.ErrNotFound) {
 		return http.StatusNotFound, "Not Found"
 	}
+	if errors.Is(err, repository.ErrDuplicateEmail) {
+		return http.StatusConflict, "email already exists"
+	}
 	// Validation errors are returned unwrapped by the service; repo errors are wrapped.
 	// We use a heuristic to distinguish them: validation messages contain known phrases.
 	// TODO: replace with typed validation error for clean distinction.

@@ -13,6 +13,18 @@ import (
 	"github.com/decko/flux/pkg/authctx"
 )
 
+// createUserRequest represents a create user request body.
+type createUserRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Role     string `json:"role"`
+}
+
+// resetPasswordRequest represents a reset password request body.
+type resetPasswordRequest struct {
+	Password string `json:"password"`
+}
+
 // updateRoleRequest represents a role update request body.
 type updateRoleRequest struct {
 	Role string `json:"role"`
@@ -91,4 +103,53 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCreateUser handles POST /api/v1/admin/users.
+// Body: {"email","password","role"}. Returns 201 Created with the new user.
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	if s.userSvc == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "user service not available", middleware.GetReqID(r.Context()))
+		return
+	}
+	var req createUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON", middleware.GetReqID(r.Context()))
+		return
+	}
+	actorID := authctx.UserID(r.Context())
+	user, err := s.userSvc.CreateUser(r.Context(), actorID, req.Email, req.Password, req.Role)
+	if err != nil {
+		status, msg := serviceError(err)
+		writeJSONError(w, status, msg, middleware.GetReqID(r.Context()))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(user)
+}
+
+// handleResetPassword handles PUT /api/v1/admin/users/{id}/password.
+// Body: {"password"}. Returns 200 OK with the updated user on success.
+func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	if s.userSvc == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "user service not available", middleware.GetReqID(r.Context()))
+		return
+	}
+	var req resetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON", middleware.GetReqID(r.Context()))
+		return
+	}
+	actorID := authctx.UserID(r.Context())
+	targetID := chi.URLParam(r, "id")
+	user, err := s.userSvc.ResetPassword(r.Context(), actorID, targetID, req.Password)
+	if err != nil {
+		status, msg := serviceError(err)
+		writeJSONError(w, status, msg, middleware.GetReqID(r.Context()))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(user)
 }
