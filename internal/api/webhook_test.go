@@ -552,3 +552,73 @@ func TestWebhookGithub_PublicEndpoint(t *testing.T) {
 		t.Errorf("got status %d, want %d (webhook endpoint is public)", resp.StatusCode, http.StatusOK)
 	}
 }
+
+// TestWebhookGithub_UpdatesLastWebhookAt verifies that after a successful
+// webhook delivery, the project's last_webhook_at field is set to a recent
+// timestamp.
+func TestWebhookGithub_UpdatesLastWebhookAt(t *testing.T) {
+	srv := setupWebhookTestServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	project := seedWebhookProject(t, srv)
+
+	// Verify last_webhook_at starts nil.
+	projects, err := srv.projectSvc.List(context.Background(), repository.ProjectFilter{})
+	if err != nil {
+		t.Fatalf("list projects: %v", err)
+	}
+	var p model.Project
+	for i := range projects {
+		if projects[i].ID == project.ID {
+			p = projects[i]
+			break
+		}
+	}
+	if p.LastWebhookAt != nil {
+		t.Fatalf("expected nil last_webhook_at before webhook, got %v", *p.LastWebhookAt)
+	}
+
+	// Send an issues webhook.
+	payload := githubPayload("opened", "test-owner/test-repo", "testuser", nil)
+	sig := hmacSign(payload, "test-webhook-secret")
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		ts.URL+"/api/v1/webhooks/github", strings.NewReader(string(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", "issues")
+	req.Header.Set("X-Hub-Signature-256", sig)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/webhooks/github: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	// Verify last_webhook_at was updated.
+	projects, err = srv.projectSvc.List(context.Background(), repository.ProjectFilter{})
+	if err != nil {
+		t.Fatalf("list projects: %v", err)
+	}
+	var updated bool
+	for i := range projects {
+		if projects[i].ID == project.ID {
+			p = projects[i]
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		t.Fatal("project not found after webhook")
+	}
+	if p.LastWebhookAt == nil {
+		t.Fatal("expected non-nil last_webhook_at after webhook, got nil")
+	}
+	if time.Since(*p.LastWebhookAt) > 30*time.Second {
+		t.Errorf("last_webhook_at is too old: %v ago", time.Since(*p.LastWebhookAt))
+	}
+}
