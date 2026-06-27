@@ -520,7 +520,6 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		}
 	}()
 
-
 	// Start webhook verification goroutine.
 	if appAuth != nil {
 		go verifyWebhooks(ctx, projectRepo, webhookSecretRepo, appAuth)
