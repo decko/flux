@@ -174,6 +174,19 @@ describe('AdminUsersPage', () => {
     });
   });
 
+  it('still shows Add User button when user list is empty', async () => {
+    mockFetch.mockResolvedValue(jsonResponse([]));
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/no users found/i)).toBeInTheDocument();
+    });
+
+    // Add User button should still be visible even with empty list
+    expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();
+  });
+
   // ── Error state ─────────────────────────────────────────────────────
 
   it('shows error banner when fetch fails', async () => {
@@ -354,5 +367,368 @@ describe('AdminUsersPage', () => {
 
     // Admin page content should not be visible
     expect(screen.queryByText(/admin users/i)).not.toBeInTheDocument();
+  });
+
+  // ── Create User: rendering ────────────────────────────────────────────
+
+  it('renders "Add User" button above the users table', async () => {
+    mockFetch.mockResolvedValue(jsonResponse(sampleUsers));
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();
+    });
+  });
+
+  // ── Create User: form appears on click ────────────────────────────────
+
+  it('shows create user form when "Add User" button is clicked', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValue(jsonResponse(sampleUsers));
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /add user/i }));
+
+    // Form fields should appear in the modal
+    await waitFor(() => {
+      expect(screen.getByLabelText('Email')).toBeInTheDocument();
+      expect(screen.getByLabelText('Password')).toBeInTheDocument();
+      expect(screen.getByLabelText('Confirm password')).toBeInTheDocument();
+      // Use exact match to avoid conflicts with table role selects
+      const roleSelects = screen.getAllByLabelText('Role');
+      expect(roleSelects.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ── Create User: generate password ────────────────────────────────────
+
+  it('generates a random password when "Generate" button is clicked', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValue(jsonResponse(sampleUsers));
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /add user/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /generate/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /generate/i }));
+
+    // Password fields should be populated (non-empty, at least 16 chars)
+    await waitFor(() => {
+      const pwInput = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+      const confirmInput = screen.getByLabelText(/confirm password/i) as HTMLInputElement;
+      expect(pwInput.value.length).toBeGreaterThanOrEqual(16);
+      expect(confirmInput.value.length).toBeGreaterThanOrEqual(16);
+    });
+  });
+
+  // ── Create User: successful submission ────────────────────────────────
+
+  it('creates a new user and sends correct POST body', async () => {
+    const user = userEvent.setup();
+    const newUser = {
+      id: 'new-1',
+      email: 'new@flux.dev',
+      role: 'user',
+      created_at: '2026-06-01T00:00:00Z',
+    };
+
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method || 'GET';
+      if (url === '/api/v1/admin/users' && method === 'GET') {
+        return Promise.resolve(jsonResponse(sampleUsers));
+      }
+      if (url === '/api/v1/admin/users' && method === 'POST') {
+        return Promise.resolve(jsonResponse(newUser, 201));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+    });
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /add user/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/email/i), 'new@flux.dev');
+    await user.type(screen.getByLabelText(/^password$/i), 'securepass1234');
+    await user.type(screen.getByLabelText(/confirm password/i), 'securepass1234');
+    await user.click(screen.getByRole('button', { name: /create/i }));
+
+    // Verify POST was sent with correct body
+    await waitFor(() => {
+      const postCall = mockFetch.mock.calls.find(
+        ([url, opts]) =>
+          url === '/api/v1/admin/users' &&
+          (opts as RequestInit)?.method === 'POST',
+      );
+      expect(postCall).toBeDefined();
+      if (postCall) {
+        const body = JSON.parse((postCall[1] as RequestInit).body as string);
+        expect(body.email).toBe('new@flux.dev');
+        expect(body.password).toBe('securepass1234');
+        expect(body.role).toBe('user');
+      }
+    });
+  });
+
+  // ── Create User: error handling ───────────────────────────────────────
+
+  it('shows error when create user fails', async () => {
+    const user = userEvent.setup();
+
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method || 'GET';
+      if (url === '/api/v1/admin/users' && method === 'GET') {
+        return Promise.resolve(jsonResponse(sampleUsers));
+      }
+      if (url === '/api/v1/admin/users' && method === 'POST') {
+        return Promise.resolve(jsonErrorResponse(409, 'email already exists'));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+    });
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /add user/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/email/i), 'dupe@flux.dev');
+    await user.type(screen.getByLabelText(/^password$/i), 'securepass1234');
+    await user.type(screen.getByLabelText(/confirm password/i), 'securepass1234');
+    await user.click(screen.getByRole('button', { name: /create/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/email already exists/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Create User: password mismatch ────────────────────────────────────
+
+  it('prevents submission when passwords do not match', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValue(jsonResponse(sampleUsers));
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add user/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /add user/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/email/i), 'new@flux.dev');
+    await user.type(screen.getByLabelText(/^password$/i), 'password123456');
+    await user.type(screen.getByLabelText(/confirm password/i), 'different1234');
+    await user.click(screen.getByRole('button', { name: /create/i }));
+
+    // Should show mismatch error and not send POST
+    await waitFor(() => {
+      expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Reset Password: button appears per row ────────────────────────────
+
+  it('renders "Reset Password" button for each user row', async () => {
+    mockFetch.mockResolvedValue(jsonResponse(sampleUsers));
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('admin@flux.dev')).toBeInTheDocument();
+    });
+
+    // Each user row should have a reset password button
+    const resetButtons = screen.getAllByRole('button', { name: /reset password/i });
+    expect(resetButtons.length).toBe(2);
+  });
+
+  // ── Reset Password: modal opens ───────────────────────────────────────
+
+  it('opens reset password modal when "Reset Password" button is clicked', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValue(jsonResponse(sampleUsers));
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('dev@flux.dev')).toBeInTheDocument();
+    });
+
+    // Click reset password for dev@flux.dev (second user)
+    const resetButtons = screen.getAllByRole('button', { name: /reset password/i });
+    expect(resetButtons.length).toBeGreaterThanOrEqual(2);
+    await user.click(resetButtons[1]!);
+
+    // Modal should show new password and confirm fields
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^confirm/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Reset Password: successful submission ─────────────────────────────
+
+  it('resets password successfully via modal', async () => {
+    const user = userEvent.setup();
+
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method || 'GET';
+      if (url === '/api/v1/admin/users' && method === 'GET') {
+        return Promise.resolve(jsonResponse(sampleUsers));
+      }
+      if (
+        url.startsWith('/api/v1/admin/users/') &&
+        url.endsWith('/password') &&
+        method === 'PUT'
+      ) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'user-2',
+            email: 'dev@flux.dev',
+            role: 'user',
+            created_at: '2026-01-02T00:00:00Z',
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+    });
+
+    await renderAdminPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('dev@flux.dev')).toBeInTheDocument();
+    });
+
+    const resetButtons = screen.getAllByRole('button', { name: /reset password/i });
+    await user.click(resetButtons[1]!);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/^new password$/i), 'newsecurepass12');
+    await user.type(screen.getByLabelText(/^confirm/i), 'newsecurepass12');
+    await user.click(screen.getByRole('button', { name: 'Reset' }));
+
+    // Verify PUT was sent with correct body
+    await waitFor(() => {
+      const putCall = mockFetch.mock.calls.find(
+        ([url, opts]) =>
+          String(url).startsWith('/api/v1/admin/users/') &&
+          String(url).endsWith('/password') &&
+          (opts as RequestInit)?.method === 'PUT',
+      );
+      expect(putCall).toBeDefined();
+      if (putCall) {
+        const body = JSON.parse((putCall[1] as RequestInit).body as string);
+        expect(body.password).toBe('newsecurepass12');
+      }
+    });
+  });
+
+  // ── Reset Password: password mismatch ───────────────────────────────
+
+  it('prevents reset submission when passwords do not match', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method || 'GET';
+      if (url === '/api/v1/admin/users' && method === 'GET') {
+        return Promise.resolve(jsonResponse(sampleUsers));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+    });
+
+    await renderAdminPage();
+    await waitFor(() => {
+      expect(screen.getByText('dev@flux.dev')).toBeInTheDocument();
+    });
+
+    const resetButtons = screen.getAllByRole('button', { name: /reset password/i });
+    await user.click(resetButtons[1]!);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/^new password$/i), 'newsecurepass12');
+    await user.type(screen.getByLabelText(/^confirm/i), 'differentpass12');
+    await user.click(screen.getByRole('button', { name: /^reset$/i }));
+
+    // Should show mismatch error, not send PUT
+    await waitFor(() => {
+      expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Reset Password: API error ───────────────────────────────────────
+
+  it('shows error when reset password API call fails', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+      const method = options?.method || 'GET';
+      if (url === '/api/v1/admin/users' && method === 'GET') {
+        return Promise.resolve(jsonResponse(sampleUsers));
+      }
+      if (
+        url.startsWith('/api/v1/admin/users/') &&
+        url.endsWith('/password') &&
+        method === 'PUT'
+      ) {
+        return Promise.resolve(jsonErrorResponse(500, 'Internal Server Error'));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${method} ${url}`));
+    });
+
+    await renderAdminPage();
+    await waitFor(() => {
+      expect(screen.getByText('dev@flux.dev')).toBeInTheDocument();
+    });
+
+    const resetButtons = screen.getAllByRole('button', { name: /reset password/i });
+    await user.click(resetButtons[1]!);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/^new password$/i), 'newsecurepass12');
+    await user.type(screen.getByLabelText(/^confirm/i), 'newsecurepass12');
+    await user.click(screen.getByRole('button', { name: /^reset$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/internal server error/i)).toBeInTheDocument();
+    });
   });
 });
