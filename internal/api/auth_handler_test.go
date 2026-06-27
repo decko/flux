@@ -221,7 +221,7 @@ func TestHandleRegister(t *testing.T) {
 	})
 
 	t.Run("duplicate email returns 409", func(t *testing.T) {
-		body := `{"email":"dup@example.com","password":"pass123"}`
+		body := `{"email":"dup@example.com","password":"password123456"}`
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
@@ -251,7 +251,7 @@ func TestHandleLogin(t *testing.T) {
 	defer ts.Close()
 
 	// First register a user.
-	registerBody := `{"email":"login@example.com","password":"myPassword1"}`
+	registerBody := `{"email":"login@example.com","password":"myPassword12345"}`
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(registerBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -261,7 +261,7 @@ func TestHandleLogin(t *testing.T) {
 	_ = resp.Body.Close()
 
 	t.Run("successful login returns 200 with token", func(t *testing.T) {
-		body := `{"email":"login@example.com","password":"myPassword1"}`
+		body := `{"email":"login@example.com","password":"myPassword12345"}`
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/login", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -321,7 +321,7 @@ func TestHandleRefresh(t *testing.T) {
 	defer ts.Close()
 
 	// Register and login to get a token.
-	registerBody := `{"email":"refresh@example.com","password":"myPassword1"}`
+	registerBody := `{"email":"refresh@example.com","password":"myPassword12345"}`
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/register", strings.NewReader(registerBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -330,7 +330,7 @@ func TestHandleRefresh(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	loginBody := `{"email":"refresh@example.com","password":"myPassword1"}`
+	loginBody := `{"email":"refresh@example.com","password":"myPassword12345"}`
 	req, _ = http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/v1/auth/login", strings.NewReader(loginBody))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)

@@ -45,6 +45,9 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (mod
 	if password == "" {
 		return model.User{}, fmt.Errorf("password is required")
 	}
+	if err := ValidatePassword(password); err != nil {
+		return model.User{}, err
+	}
 	if err := validateEmail(email); err != nil {
 		return model.User{}, err
 	}
