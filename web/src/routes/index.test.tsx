@@ -84,19 +84,19 @@ describe('Dashboard', () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/pipeline-runs')) {
         return Promise.resolve(
-          jsonResponse(
-            Array.from({ length: 7 }, (_, i) => ({ id: `${i}` })),
-          ),
+          jsonResponse({
+            items: Array.from({ length: 7 }, (_, i) => ({ id: `${i}` })),
+          }),
         );
       }
       if (url.includes('/pull-requests')) {
-        return Promise.resolve(jsonResponse([{ id: '1' }, { id: '2' }, { id: '3' }]));
+        return Promise.resolve(jsonResponse({ items: [{ id: '1' }, { id: '2' }, { id: '3' }] }));
       }
       if (url.includes('/tickets')) {
         return Promise.resolve(
-          jsonResponse(
-            Array.from({ length: 12 }, (_, i) => ({ id: `${i}` })),
-          ),
+          jsonResponse({
+            items: Array.from({ length: 12 }, (_, i) => ({ id: `${i}` })),
+          }),
         );
       }
       if (url.includes('/projects')) {

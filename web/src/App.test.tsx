@@ -46,6 +46,7 @@ describe('App', () => {
   });
 
   it('renders the dashboard heading on the home page', async () => {
+    localStorage.setItem('flux_token', 'test-token');
     await renderWithRouter();
     expect(
       screen.getByRole('heading', { name: 'Dashboard' }),

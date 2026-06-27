@@ -202,7 +202,7 @@ describe('PipelineRunsPage', () => {
   // --- Success state: rendering runs ---
 
   it('renders pipeline run cards when data is loaded', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(sampleRuns));
+    mockFetch.mockResolvedValue(jsonResponse({ items: sampleRuns }));
 
     renderPage();
 
@@ -213,7 +213,7 @@ describe('PipelineRunsPage', () => {
   });
 
   it('renders the correct number of run cards', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(sampleRuns));
+    mockFetch.mockResolvedValue(jsonResponse({ items: sampleRuns }));
 
     renderPage();
 
@@ -224,7 +224,7 @@ describe('PipelineRunsPage', () => {
   });
 
   it('displays status badges for each run', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(sampleRuns));
+    mockFetch.mockResolvedValue(jsonResponse({ items: sampleRuns }));
 
     renderPage();
 
