@@ -544,3 +544,25 @@ func TestAdminHandler_ResetPassword_Forbidden(t *testing.T) {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 }
+
+// TestAdminHandler_CreateUser_InvalidEmail verifies that an invalid email
+// format (missing @ sign) returns 400 Bad Request.
+func TestAdminHandler_CreateUser_InvalidEmail(t *testing.T) {
+	srv := setupAdminServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := `{"email":"not-an-email","password":"123456789012","role":"user"}`
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/admin/users (invalid email): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}

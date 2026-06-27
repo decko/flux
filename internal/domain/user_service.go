@@ -190,6 +190,10 @@ func (s *UserService) CreateUser(ctx context.Context, actorID, email, password, 
 		return model.User{}, fmt.Errorf("create user: %w", err)
 	}
 
+	// Audit after mutation: if Record fails, the user still exists which
+	// may lead to retry creating a duplicate. The DB unique constraint on
+	// email catches this, but the error message is misleading (409 instead
+	// of 500). Accepted trade-off for now.
 	if s.auditSvc != nil {
 		if err := s.auditSvc.Record(ctx, "user.created", "user", user.ID,
 			fmt.Sprintf("actor=%q email=%q role=%q", actorID, email, role)); err != nil {
@@ -228,6 +232,8 @@ func (s *UserService) ResetPassword(ctx context.Context, actorID, targetID, newP
 		return model.User{}, fmt.Errorf("update user: %w", err)
 	}
 
+	// Audit after mutation: same trade-off as CreateUser — if Record fails,
+	// the password is already changed. Accepted risk.
 	if s.auditSvc != nil {
 		if err := s.auditSvc.Record(ctx, "user.password_reset", "user", targetID,
 			fmt.Sprintf("actor=%q", actorID)); err != nil {
