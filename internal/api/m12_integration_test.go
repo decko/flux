@@ -55,6 +55,10 @@ func (s *m12MockSyncService) SyncNow(_ context.Context) error {
 	return nil
 }
 
+func (s *m12MockSyncService) SyncProject(_ context.Context, _ string) error {
+	return nil
+}
+
 // m12WebhookPayload creates a GitHub issues webhook payload with a configurable
 // issue number, action, repo full name, sender, and optional labels.
 func m12WebhookPayload(issueNumber int, action, fullName, senderLogin string, labels []string) []byte {

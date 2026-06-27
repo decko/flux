@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/decko/flux/internal/domain"
@@ -16,6 +17,7 @@ import (
 type syncService interface {
 	Status() domain.SyncStatus
 	SyncNow(ctx context.Context) error
+	SyncProject(ctx context.Context, projectID string) error
 }
 
 // syncStatusResponse is the JSON body for GET /api/v1/sync/status.
@@ -68,6 +70,35 @@ func (s *Server) handleSyncTrigger(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		if err := s.syncSvc.SyncNow(ctx); err != nil {
 			slog.WarnContext(ctx, "sync failed", "error", err)
+		}
+	}()
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// handleSyncProject triggers a sync for a single project.
+// POST /api/v1/projects/{id}/sync (admin-only).
+func (s *Server) handleSyncProject(w http.ResponseWriter, r *http.Request) {
+	if s.syncSvc == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "sync service not available", middleware.GetReqID(r.Context()))
+		return
+	}
+	projectID := chi.URLParam(r, "id")
+	if projectID == "" {
+		writeJSONError(w, http.StatusBadRequest, "project ID is required", middleware.GetReqID(r.Context()))
+		return
+	}
+
+	if !s.syncMu.TryLock() {
+		writeJSONError(w, http.StatusConflict, "sync already in progress", middleware.GetReqID(r.Context()))
+		return
+	}
+	go func() {
+		defer s.syncMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if err := s.syncSvc.SyncProject(ctx, projectID); err != nil {
+			slog.WarnContext(ctx, "project sync failed", "error", err, "project_id", projectID)
 		}
 	}()
 
