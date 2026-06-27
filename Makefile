@@ -1,4 +1,4 @@
-.PHONY: build run dev test lint clean frontend backend all migrate seed
+.PHONY: build run dev test lint clean frontend backend all migrate seed set-password user-add hooks
 
 BINARY=flux
 GOFLAGS=-trimpath
@@ -46,3 +46,6 @@ set-password:
 
 user-add:
 	go run ./cmd/flux user add
+
+hooks:
+	pip install pre-commit && pre-commit install
