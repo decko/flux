@@ -26,6 +26,7 @@ interface Project {
   pipelines: string[];
   installation_id: number;
   webhook_id: number;
+  last_webhook_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -196,12 +197,29 @@ export function ProjectDetailPage() {
     },
   });
 
-  const deleteMutation = useMutation<void, Error, string>({
-    mutationFn: (ruleId) => deleteTriggerRule(id, ruleId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['trigger-rules', id] });
-    },
-  });
+	const deleteMutation = useMutation<void, Error, string>({
+		mutationFn: (ruleId) => deleteTriggerRule(id, ruleId),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ['trigger-rules', id] });
+		},
+	});
+
+	const syncMutation = useMutation<void, Error, void>({
+		mutationFn: async () => {
+			const res = await fetch(`/api/v1/projects/${id}/sync`, {
+				method: 'POST',
+				headers: authHeaders(),
+			});
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({}));
+				throw new Error((body as Record<string, unknown>).error as string || res.statusText);
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ['project', id] });
+			queryClient.invalidateQueries({ queryKey: ['trigger-rules', id] });
+		},
+	});
 
   // --- Loading ---
   if (projectQuery.isPending) {
@@ -247,6 +265,21 @@ export function ProjectDetailPage() {
         </p>
         <div className="mt-2">
           <DefinitionBadge definition={project.definition} />
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {syncMutation.isPending ? 'Syncing...' : 'Sync Now'}
+          </button>
+          {project.last_webhook_at && (
+            <span className="text-xs text-gray-400">
+              Last webhook: {formatDate(project.last_webhook_at)}
+            </span>
+          )}
         </div>
       </section>
 

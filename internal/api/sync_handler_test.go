@@ -43,6 +43,10 @@ func (s *mockSyncService) SyncNow(_ context.Context) error {
 	return nil
 }
 
+func (s *mockSyncService) SyncProject(_ context.Context, _ string) error {
+	return nil
+}
+
 // setupSyncServer creates a Server with a mock SyncService for testing sync endpoints.
 func setupSyncServer(t *testing.T) (*Server, *mockSyncService) {
 	t.Helper()

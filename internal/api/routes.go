@@ -64,6 +64,7 @@ func (s *Server) registerRoutes() {
 				r.Post("/projects/{id}/trigger-rules", s.handleCreateTriggerRule)
 				r.Put("/projects/{id}/trigger-rules/{ruleId}", s.handleUpdateTriggerRule)
 				r.Delete("/projects/{id}/trigger-rules/{ruleId}", s.handleDeleteTriggerRule)
+				r.Post("/projects/{id}/sync", s.handleSyncProject)
 				r.Post("/pipeline-runs/{id}/trigger", s.handleTriggerPipelineRun)
 				r.Post("/pipeline-runs/{id}/cancel", s.handleCancelPipelineRun)
 				r.Post("/sync/trigger", s.handleSyncTrigger)
