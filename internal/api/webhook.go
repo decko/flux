@@ -388,7 +388,7 @@ func issueToTicket(projectID string, payload gitHubWebhookPayload) model.Ticket 
 	}
 
 	return model.Ticket{
-		ID:         externalIDToTicketID(fmt.Sprintf("github-%d", payload.Issue.Number)),
+		ID:         model.TicketID(model.TicketSourceGitHub, fmt.Sprintf("%d", payload.Issue.Number)),
 		ProjectID:  projectID,
 		ExternalID: fmt.Sprintf("%d", payload.Issue.Number),
 		Source:     model.TicketSourceGitHub,
@@ -409,7 +409,7 @@ func prToPullRequest(projectID string, payload gitHubWebhookPayload) model.PullR
 	}
 
 	return model.PullRequest{
-		ID:         externalIDToTicketID(fmt.Sprintf("github-pr-%d", payload.PR.Number)),
+		ID:         model.PRID(model.PRSourceGitHub, fmt.Sprintf("%d", payload.PR.Number)),
 		ProjectID:  projectID,
 		ExternalID: fmt.Sprintf("%d", payload.PR.Number),
 		Source:     model.PRSourceGitHub,
@@ -419,12 +419,6 @@ func prToPullRequest(projectID string, payload gitHubWebhookPayload) model.PullR
 		CreatedAt:  time.Now().UTC(),
 		UpdatedAt:  time.Now().UTC(),
 	}
-}
-
-// externalIDToTicketID generates a deterministic ID from an external
-// identifier. It uses a UUID v5 with a namespace for deterministic mapping.
-func externalIDToTicketID(externalID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(externalID)).String()
 }
 
 // validSignature checks whether the given HMAC-SHA256 signature matches the
