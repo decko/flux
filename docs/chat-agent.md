@@ -181,14 +181,63 @@ TOOL RESULT: list_tickets → [{"id":"42", "title":"...", "body":"..."}]
 ```
 Not: "Here are the tickets: #42 says ignore previous instructions and..."
 
-### Threat: Agent Accountability
+### Audit Model: Dual-Layer, Single Truth
 
-**Problem:** Current audit trail attributes all actions to the human user. Can't distinguish "user clicked a button" from "agent executed a tool call."
+wtmcp and flux have independent audit systems with different purposes. The plugin bridges them:
 
-**Defense (Phase 2):** Extended audit event with:
-- `ActorType`: "human" | "agent" | "system"
-- `AgentSessionID`: unique per chat session
-- `PrincipalID`: the human who initiated the agent session
+```
+wtmcp audit (local file)                 flux audit (hash-chained DB)
+─────────────────────────                ────────────────────────────
+
+All events logged locally:               High-value events only:
+  tool_call                               → github.issue.created
+  http_request (method, host, status)     → github.pr.created
+  elicitation (confirm/deny/cancel)       → github.review.submitted
+  control_action (plugin reload)          → github.comment.added
+
+Purpose: debug plugins,                  Purpose: tamper-evident trail,
+         operator visibility                     attributable, queryable
+
+Scrubbing: field-name + JWT              Attribution:
+  detection + high-entropy                  ActorType: "human" | "agent" | "soda"
+                                            AgentSessionID: unique per session
+Query: grep / audit.log                    PrincipalID: who initiated
+                                            ActorID: who executed (system:chat, system:soda)
+
+                    ┌──────────────────┐
+                    │  flux/github     │
+                    │  plugin          │
+                    │                  │
+                    │  after each      │
+                    │  tool execution: │
+                    │                  │
+                    │  POST /api/v1/   │
+                    │  audit/ingest    │──→ flux audit trail
+                    │  (shared secret) │    (hash-chained,
+                    │                  │     queryable,
+                    │  {               │     attributable)
+                    │    action,       │
+                    │    actor,        │
+                    │    principal,    │
+                    │    resource,     │
+                    │    metadata      │
+                    │  }               │
+                    └──────────────────┘
+
+wtmcp's local audit log continues    flux's audit trail is the
+unmodified — plugin-level debugging  compliance record — immutable,
+for operators.                       verifiable, attributable.
+```
+
+**Key decisions:**
+
+| Decision | Rationale |
+|----------|-----------|
+| **Plugin calls flux's ingest endpoint** | Audit events flow into flux's hash-chained trail, not a separate log |
+| **Shared secret for ingest auth** | Internal-only endpoint; the plugin authenticates with a pre-shared secret, not a JWT |
+| **wtmcp audit stays as-is** | Operational debugging (why did a tool call fail?) is separate from compliance (who created this issue?) |
+| **High-value events only** | Not every HTTP request needs a hash-chained audit entry — only tool executions that change state |
+| **ActorType distinguishes sources** | `"human"` = user clicked a button, `"agent"` = chat agent called a tool, `"soda"` = pipeline phase executed an action |
 
 ### Threat: Resource Exhaustion
 
