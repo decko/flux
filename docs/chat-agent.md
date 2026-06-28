@@ -62,23 +62,44 @@ Adds multi-step, autonomous reasoning:
 
 ## Architecture
 
-### Tool Sources & Auth
+### Custom wtmcp GitHub Plugin
 
-The chat agent gets its tools from two sources, using flux's existing GitHub App installation tokens (no PAT needed):
+GitHub interaction is centralized in a custom wtmcp plugin. All consumers — the chat agent, soda orchestrator, and future automation — share the same MCP tools backed by GitHub App installation tokens.
 
 ```
-                     ┌─ wtmcp GitHub plugin ──→ investigation/discovery
-flux chat agent ─────┤     (search, my_work, PR details, files, reviews, comments)
-  (MCP client)       │
-                     └─ flux tool registry ────→ creation/execution
-                           (create_issue, trigger_pipeline, sync, audit)
+┌───────────┐     MCP      ┌──────────────────┐
+│ chat agent├──────────────┤                  │
+└───────────┘              │      wtmcp       │
+                           │                  │
+┌───────────┐     MCP      │  ┌────────────┐  │    installation
+│   soda    ├──────────────┤  │  flux/      │  │    token
+└───────────┘              │  │  github     │──┼──→ GitHub API
+                           │  │  plugin     │  │
+                           │  └──────┬─────┘  │
+                           └─────────┼────────┘
+                                     │ audit write-back
+                                     ▼
+                              flux audit trail
 ```
 
-**wtmcp** provides 13 read tools + 3 write tools (PR reviews, comments). It handles the GitHub API interaction, caching, rate limiting, and SSRF protection. The chat agent connects to it as an MCP client over stdio.
+**Why wtmcp was chosen over building flux's own MCP server:**
+- MCP protocol server, plugin lifecycle management, and process supervision come for free
+- HTTP proxy with SSRF protection, rate limiting, caching, and sandboxing are built in
+- The plugin system is language-agnostic (Python, Go, or any executable over JSON-lines)
+- Progressive tool discovery (primary vs deferred tools) reduces LLM context usage
 
-**flux** provides the tools wtmcp doesn't cover: creating issues (the GitHub plugin lacks `create_issue`), triggering pipelines, managing sync, and querying the audit trail. These wrap existing domain services.
+**Why a custom plugin instead of the existing GitHub plugin:**
+- GitHub App installation token auth (the existing plugin expects a PAT)
+- Full write tooling: `create_issue`, `create_pr` (the existing plugin only has reviews/comments)
+- Audit write-back to flux's hash-chained trail
+- Per-installation scoping (the plugin respects which project/installation a request belongs to)
+- Single shared tool set serving both the chat agent and soda pipeline phases
 
-**Token flow:** `appAuth.GetToken(ctx, project.InstallationID)` at session start → passed to wtmcp via `GITHUB_TOKEN` env var on process start. Per-session wtmcp process with fresh token. Session restart if >55 minutes (installation tokens expire after 1 hour).
+### How consumers use the plugin
+
+**Chat agent** — the LLM orchestrator connects to wtmcp as an MCP client. When a user says "what are my open PRs?", the LLM calls `github_my_prs_to_review`. When they say "create an issue for the login bug", the LLM calls `github_create_issue`. The user sees tool call cards inline in the chat.
+
+**Soda orchestrator** — during pipeline phases (`plan`, `implement`, `submit`), soda connects to the same wtmcp instance. The `plan` phase reads issues and PR context. The `submit` phase creates PRs, posts comments, and submits reviews. All soda actions are audited through flux's trail.
 
 ### Detailed Architecture
 
@@ -93,45 +114,58 @@ flux chat agent ─────┤     (search, my_work, PR details, files, revi
 ┌──────────────────────────────────────────────────┐
 │ Chat Handler (Chi, JWT middleware)               │
 │ - Validates auth, project scope                  │
+│ - Launches wtmcp with fresh installation token   │
 │ - Manages SSE streaming connection               │
-└──────────────────┬───────────────────────────────┘
-                   │
-                   ▼
+└──────┬──────────────────────┬────────────────────┘
+       │                      │
+       ▼                      ▼
+┌──────────────┐     ┌───────────────────┐
+│ LLM Client   │     │ wtmcp launcher    │
+│ - OpenAI     │     │ - appAuth.GetToken│
+│ - Anthropic  │     │ - env: GITHUB_TOKEN│
+│ (adapter     │     │ - stdio MCP bridge│
+│  pattern)    │     └────────┬──────────┘
+└──────────────┘              │
+       │                      │  MCP (stdio)
+       ▼                      ▼
 ┌──────────────────────────────────────────────────┐
 │ LLM Orchestrator                                 │
 │ - Sends messages + tool definitions to LLM       │
-│ - Parses tool call responses                     │
-│ - Feeds tool results back to LLM (tool loop)     │
+│ - Routes tool calls to wtmcp (GitHub) or flux    │
+│   services (pipeline, sync, audit, projects)     │
+│ - Feeds tool results back to LLM                 │
 └──────┬───────────────────────────────┬───────────┘
        │                               │
        ▼                               ▼
-┌──────────────┐              ┌──────────────────┐
-│ LLM Client   │              │ Tool Registry    │
-│ - OpenAI     │              │ - list_tickets   │
-│ - Anthropic  │              │ - create_issue   │
-│ (adapter     │              │ - trigger_pipeline│
-│  pattern)    │              │ - ...            │
-└──────────────┘              └──────┬───────────┘
-                                     │
-                                     ▼
-                          ┌──────────────────────┐
-                          │ Existing Services    │
-                          │ - TicketService      │
-                          │ - PipelineService    │
-                          │ - ProjectService     │
-                          │ - SyncService        │
-                          │ - AuditService       │
-                          └──────────────────────┘
+┌──────────────────┐          ┌──────────────────┐
+│ wtmcp + flux/    │          │ flux tool registry│
+│ github plugin    │          │ - trigger_pipeline│
+│                  │          │ - trigger_sync    │
+│ MCP tools:       │          │ - list_projects   │
+│ - create_issue   │          │ - get_sync_status │
+│ - create_pr      │          │ - query_audit     │
+│ - add_comment    │          └──────┬───────────┘
+│ - create_review  │                 │
+│ - search         │                 ▼
+│ - my_work        │          ┌──────────────────┐
+│ - get_pr_files   │          │ Existing Services│
+│ - ...            │          │ - PipelineService │
+└──────────────────┘          │ - SyncService     │
+                              │ - ProjectService  │
+                              │ - AuditService    │
+                              └──────────────────┘
 ```
 
 ### Key design decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| **LLM adapter pattern** | Matches existing `internal/adapter/ticket/` and `internal/adapter/scm/` patterns. First impl: OpenAI. Anthropic follows same interface. |
-| **Tool registry as domain service** | Tools map 1:1 to existing domain service methods. The registry just describes them in LLM-friendly schemas. |
-| **SSE for streaming** | Stdlib `http.Flusher`. No WebSocket library needed. Simpler than WebSocket for unidirectional server→client streaming. |
-| **No persistence for chat (MVP)** | Ephemeral, per-request. No session tables, no message store, no retention policy. Add in Phase 2 if needed. |
+| **Custom wtmcp plugin** | Reuses wtmcp's MCP server, process management, caching, rate limiting, sandboxing. Only build the plugin logic. |
+| **GitHub App installation tokens** | Already working in flux. No PAT to manage. Per-installation scoping. Proper audit trail showing the App as the actor. |
+| **flux for non-GitHub tools** | Pipeline triggers, sync management, project queries, audit queries are flux-domain operations. They live in flux's own tool registry. |
+| **LLM adapter pattern** | Matches existing adapter patterns. First: OpenAI. Anthropic follows same interface. |
+| **SSE for streaming** | Stdlib `http.Flusher`. No WebSocket needed. Simpler for server→client streaming. |
+| **No chat persistence (MVP)** | Ephemeral, per-request. Add session storage in Phase 2 if needed. |
 | **JWT auth (not admin-only)** | Chat uses standard `AuthMiddleware`. Users can only see projects they have access to. Write tools respect existing role gates. |
 | **Tool confirmation before execution** | All write tools show a confirmation card. User must approve. This is the primary safety mechanism in Phase 1. |
 
@@ -177,45 +211,53 @@ Not: "Here are the tickets: #42 says ignore previous instructions and..."
 
 ## Tool Definitions
 
-### Read-only tools (Phase 1)
+### GitHub tools (custom wtmcp plugin — shared by chat agent and soda)
 
-```json
-{
-  "name": "list_tickets",
-  "description": "List tickets across all projects or filter by project and status",
-  "parameters": {
-    "project_id": { "type": "string", "description": "Project ID to filter by" },
-    "status": { "type": "string", "enum": ["open", "closed"] }
-  }
-}
-```
+The plugin wraps the full GitHub API surface that both consumers need:
 
-### Write tools (Phase 1, with confirmation)
+**Read tools (investigation/discovery):**
 
-```json
-{
-  "name": "create_issue",
-  "description": "Create a new GitHub issue in a project's repository. Requires user confirmation.",
-  "parameters": {
-    "project_id": { "type": "string", "required": true },
-    "title": { "type": "string", "required": true },
-    "body": { "type": "string" },
-    "labels": { "type": "array", "items": { "type": "string" } }
-  }
-}
-```
+| Tool | Description |
+|------|-------------|
+| `github_search` | Search issues/PRs with full GitHub query syntax |
+| `github_my_work` | Unified task list: assigned issues, PRs to review, mentions |
+| `github_my_prs_to_review` | PRs where the user is a requested reviewer |
+| `github_my_issues` | Open issues assigned to the authenticated user |
+| `github_my_notifications` | GitHub notification feed |
+| `github_get_issue` | Issue details: title, body, state, labels, assignees, milestone |
+| `github_get_pr` | PR details: title, body, status, merge state, additions/deletions, files count, reviewers |
+| `github_get_pr_files` | Files changed in a PR with status, additions, deletions, and diff patches |
+| `github_get_pr_reviews` | All reviews on a PR with reviewer, state (APPROVED/CHANGES_REQUESTED/COMMENTED), body |
+| `github_get_pr_review_comments` | Inline code review comments with diff hunks and file paths |
+| `github_get_comments` | Conversation comments on an issue or PR |
+| `github_get_pr_commits` | Commit list in a PR with SHA, message, author |
 
-### Admin tools (Phase 2+, with re-authentication)
+**Write tools (creation/mutation):**
 
-```json
-{
-  "name": "trigger_sync",
-  "description": "Trigger a manual sync for a project. Admin only. Requires re-authentication.",
-  "parameters": {
-    "project_id": { "type": "string", "required": true }
-  }
-}
-```
+| Tool | Description |
+|------|-------------|
+| `github_create_issue` | Create a new issue with title, body, labels, assignees |
+| `github_create_pr` | Create a pull request from a branch with title and body |
+| `github_add_comment` | Post a conversation comment on an issue or PR |
+| `github_create_review` | Submit a PR review (APPROVE, REQUEST_CHANGES, or COMMENT with inline comments) |
+| `github_add_pr_comment` | Post an inline code comment on a specific line in a PR diff |
+
+**Plugin behavior:**
+- All write tools default to `dry_run: true` — the agent previews the action before executing
+- wtmcp's elicitation prompts for confirmation before any write
+- Rate limiting and caching handled by wtmcp's proxy layer
+- Installation token from flux's GitHub App, refreshed per session
+
+### flux-native tools (flux tool registry)
+
+| Tool | Description | Access |
+|------|-------------|--------|
+| `list_projects` | List all projects the user has access to | Read |
+| `get_project` | Get project details including webhook health | Read |
+| `get_sync_status` | Get sync status and webhook health | Read |
+| `trigger_pipeline` | Trigger a pipeline run for a project/ticket | Write (admin) |
+| `trigger_sync` | Trigger a manual sync for a project | Write (admin) |
+| `query_audit` | Query the hash-chained audit trail | Read (admin) |
 
 ## Open Questions for Discussion
 
