@@ -62,6 +62,26 @@ Adds multi-step, autonomous reasoning:
 
 ## Architecture
 
+### Tool Sources & Auth
+
+The chat agent gets its tools from two sources, using flux's existing GitHub App installation tokens (no PAT needed):
+
+```
+                     ┌─ wtmcp GitHub plugin ──→ investigation/discovery
+flux chat agent ─────┤     (search, my_work, PR details, files, reviews, comments)
+  (MCP client)       │
+                     └─ flux tool registry ────→ creation/execution
+                           (create_issue, trigger_pipeline, sync, audit)
+```
+
+**wtmcp** provides 13 read tools + 3 write tools (PR reviews, comments). It handles the GitHub API interaction, caching, rate limiting, and SSRF protection. The chat agent connects to it as an MCP client over stdio.
+
+**flux** provides the tools wtmcp doesn't cover: creating issues (the GitHub plugin lacks `create_issue`), triggering pipelines, managing sync, and querying the audit trail. These wrap existing domain services.
+
+**Token flow:** `appAuth.GetToken(ctx, project.InstallationID)` at session start → passed to wtmcp via `GITHUB_TOKEN` env var on process start. Per-session wtmcp process with fresh token. Session restart if >55 minutes (installation tokens expire after 1 hour).
+
+### Detailed Architecture
+
 ```
 ┌──────────────────────────────────────────────────┐
 │ Chat UI (React, streaming SSE)                   │
