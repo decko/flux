@@ -424,6 +424,73 @@ The chat page uses a two-column layout: conversation on the left, tracker on the
 | **Accessibility** | Cards use `article` role. Action buttons are keyboard-navigable. Tracker uses a `region` landmark with `aria-label`. |
 | **Streaming behavior** | Text streams token-by-token. Tool calls appear as inline cards mid-stream. The LLM can interleave text and tool calls in a single response. |
 
+## Session Management
+
+### Persistence (Phase 2)
+
+After the ephemeral MVP, sessions become persistent — users can browse past conversations, resume them, and attach them to project artifacts.
+
+### Data model
+
+| Table | Key columns |
+|-------|------------|
+| `chat_sessions` | `id`, `user_id`, `project_id`, `title`, `ticket_id?`, `milestone_id?`, `pr_id?`, `created_at`, `updated_at` |
+| `chat_messages` | `id`, `session_id`, `role` (user/assistant/tool), `content` (text or structured JSON), `created_at` |
+| `chat_summaries` | `id`, `session_id`, `summary_type` (auto/full/manual), `content`, `created_at` |
+
+### Session lifecycle
+
+```
+Create → Active → Resumed → Active → Archived
+  │                  │
+  │                  └── (reattached to new ticket, etc.)
+  └── (attached to ticket/milestone/PR)
+```
+
+**Creation:** First message to a project creates a session. Title auto-generated from that first message. User can rename.
+
+**Attachment:** Session can be linked to a ticket, milestone, or PR. All three are optional — a session can be standalone. Links are mutable (user can reattach later).
+
+**Resumption:** Loading a past session sends full history for the last N messages (e.g., 20) plus the most recent summary to the LLM. Older messages are available in the UI but not sent to the LLM unless the user scrolls up (lazy context loading).
+
+**Archival:** Sessions are never deleted. They persist as project history.
+
+### Summaries
+
+The conversation can be summarized at any point:
+
+| Type | Trigger | Content |
+|------|---------|---------|
+| **Auto** | After every ~20 messages, or when close to context limit | Brief summary of decisions, actions taken, artifacts created |
+| **Full** | User clicks "Summarize conversation" | Comprehensive summary of entire conversation |
+| **Manual** | User clicks "Summarize from here" | Summary from the selected message to the end |
+
+**UI:** A "Summarize" button in the conversation header. A separator line in the message list marks where the last summary was generated. The summary itself renders as a system card with an icon and timestamp.
+
+**Context strategy on resume:**
+```
+[system prompt + tool definitions]
+[current summary] ← the most recent summary
+[last 20 messages] ← full messages
+```
+
+This gives the LLM enough context to continue meaningfully without burning tokens on the entire history.
+
+### Access control
+
+Sessions are scoped to `(user_id, project_id)`. Users can only see sessions for projects they have access to. The `GET /api/v1/chat/sessions` endpoint filters by the authenticated user's JWT and project membership. Admin users can see all sessions for a project.
+
+### API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/projects/{id}/chat/sessions` | List sessions for project (user-scoped) |
+| `GET` | `/api/v1/chat/sessions/{id}` | Get session with messages |
+| `PATCH` | `/api/v1/chat/sessions/{id}` | Update title, attachments (ticket_id, milestone_id, pr_id) |
+| `DELETE` | `/api/v1/chat/sessions/{id}` | Delete session |
+| `POST` | `/api/v1/chat` | Send message. `session_id` resumes; omitted creates new session |
+| `POST` | `/api/v1/chat/sessions/{id}/summaries` | Generate a new summary |
+
 ## Open Questions for Discussion
 
 ### UX & Interaction Model
