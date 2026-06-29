@@ -162,6 +162,18 @@ function formatDate(iso: string): string {
   });
 }
 
+/**
+ * Returns a Tailwind class for a colored dot indicating webhook health.
+ * Green if the last webhook was within the last hour, red otherwise.
+ */
+function webhookDotColor(lastWebhookAt: string): string {
+  const age = Date.now() - new Date(lastWebhookAt).getTime();
+  const oneHour = 60 * 60 * 1000;
+  return age < oneHour
+    ? 'inline-block h-2 w-2 rounded-full bg-green-500'
+    : 'inline-block h-2 w-2 rounded-full bg-red-500';
+}
+
 // ─── Page component ─────────────────────────────────────────────────────
 
 export function ProjectDetailPage() {
@@ -276,7 +288,11 @@ export function ProjectDetailPage() {
             {syncMutation.isPending ? 'Syncing...' : 'Sync Now'}
           </button>
           {project.last_webhook_at && (
-            <span className="text-xs text-gray-400">
+            <span className="inline-flex items-center gap-1 text-xs text-gray-400">
+              <span
+                className={webhookDotColor(project.last_webhook_at)}
+                aria-label="webhook status"
+              />
               Last webhook: {formatDate(project.last_webhook_at)}
             </span>
           )}
