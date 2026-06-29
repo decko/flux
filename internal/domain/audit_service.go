@@ -101,6 +101,7 @@ func (s *AuditService) VerifyIntegrity(ctx context.Context) (*AuditIntegrityResu
 			Action:       e.Action,
 			ResourceType: e.ResourceType,
 			ResourceID:   e.ResourceID,
+			Metadata:     e.Metadata,
 			CreatedAt:    e.CreatedAt,
 		})
 		if expected != e.Hash {
@@ -114,9 +115,16 @@ func (s *AuditService) VerifyIntegrity(ctx context.Context) (*AuditIntegrityResu
 }
 
 // hashEvent computes the SHA-256 hash of an audit event using its PreviousHash,
-// ActorID, Action, ResourceType, ResourceID, and CreatedAt fields.
+// ActorID, Action, ResourceType, ResourceID, Metadata, and CreatedAt fields.
+// Fields are separated by null bytes to prevent concatenation collisions.
 func hashEvent(e model.AuditEvent) string {
-	input := e.PreviousHash + e.ActorID + string(e.Action) + e.ResourceType + e.ResourceID + e.CreatedAt.String()
+	input := e.PreviousHash + "\x00" +
+		e.ActorID + "\x00" +
+		string(e.Action) + "\x00" +
+		e.ResourceType + "\x00" +
+		e.ResourceID + "\x00" +
+		e.Metadata + "\x00" +
+		e.CreatedAt.String()
 	h := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(h[:])
 }
