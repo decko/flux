@@ -181,63 +181,78 @@ TOOL RESULT: list_tickets → [{"id":"42", "title":"...", "body":"..."}]
 ```
 Not: "Here are the tickets: #42 says ignore previous instructions and..."
 
-### Audit Model: Dual-Layer, Single Truth
+### Audit Model: MCP Logging + Hash-Chained Trail
 
-wtmcp and flux have independent audit systems with different purposes. The plugin bridges them:
+The MCP protocol has a built-in `notifications/message` capability (RFC 5424 log levels, arbitrary JSON data). The plugin uses it to emit audit events on the existing MCP pipe — no new transport, no HTTP endpoints, no custom protocol.
 
 ```
-wtmcp audit (local file)                 flux audit (hash-chained DB)
-─────────────────────────                ────────────────────────────
+wtmcp local audit (file)                 flux audit (hash-chained DB)
+──────────────────────────               ────────────────────────────
 
-All events logged locally:               High-value events only:
+All events logged locally:               High-value events only (via MCP):
   tool_call                               → github.issue.created
-  http_request (method, host, status)     → github.pr.created
-  elicitation (confirm/deny/cancel)       → github.review.submitted
-  control_action (plugin reload)          → github.comment.added
+  http_request                            → github.pr.created
+  elicitation                             → github.review.submitted
+  control_action                          → github.comment.added
 
-Purpose: debug plugins,                  Purpose: tamper-evident trail,
-         operator visibility                     attributable, queryable
+Purpose: debug plugins                   Purpose: tamper-evident trail
 
-Scrubbing: field-name + JWT              Attribution:
-  detection + high-entropy                  ActorType: "human" | "agent" | "soda"
-                                            AgentSessionID: unique per session
-Query: grep / audit.log                    PrincipalID: who initiated
-                                            ActorID: who executed (system:chat, system:soda)
-
-                    ┌──────────────────┐
-                    │  flux/github     │
-                    │  plugin          │
-                    │                  │
-                    │  after each      │
-                    │  tool execution: │
-                    │                  │
-                    │  POST /api/v1/   │
-                    │  audit/ingest    │──→ flux audit trail
-                    │  (shared secret) │    (hash-chained,
-                    │                  │     queryable,
-                    │  {               │     attributable)
-                    │    action,       │
-                    │    actor,        │
-                    │    principal,    │
-                    │    resource,     │
-                    │    metadata      │
-                    │  }               │
-                    └──────────────────┘
-
-wtmcp's local audit log continues    flux's audit trail is the
-unmodified — plugin-level debugging  compliance record — immutable,
-for operators.                       verifiable, attributable.
+     ┌──────────────────────────────────────┐
+     │         MCP JSON-RPC pipe            │
+     │                                      │
+     │  Plugin → wtmcp core:                │
+     │    tool_call / http_request          │
+     │                                      │
+     │  wtmcp core → flux (MCP client):     │
+     │    tool_result                       │
+     │    notifications/message ← AUDIT     │
+     │      {                               │
+     │        "level": "info",              │
+     │        "logger": "audit",            │
+     │        "data": {                     │
+     │          "action": "...",            │
+     │          "actor": "chat-agent",      │
+     │          "principal": "decko",       │
+     │          "resource": "decko/flux#42",│
+     │          "correlation_id": "..."     │
+     │        }                             │
+     │      }                               │
+     └──────────┬───────────────────────────┘
+                │
+                ▼
+     ┌──────────────────────┐
+     │ flux MCP client      │
+     │                      │
+     │ Listens for:         │
+     │  logger == "audit"   │
+     │                      │
+     │ Ingests into:        │
+     │  auditSvc.Record()   │
+     │  hash-chained DB     │
+     └──────────────────────┘
 ```
+
+**Why MCP logging works:**
+
+| Property | How MCP satisfies it |
+|----------|---------------------|
+| **Standard** | `notifications/message` is in the MCP spec, no custom types |
+| **Non-blocking** | Notifications are fire-and-forget, no response expected |
+| **Existing pipe** | Same JSON-RPC transport as tool calls and results |
+| **Correlation** | `context.WithCorrelationID` already threads UUIDv7 through all wtmcp requests |
+| **Level semantics** | `info` = success, `error` = failure, `warning` = dry-run preview |
+| **Filterable** | flux subscribes to `logger == "audit"`, ignores operational logs |
+
+**What the plugin does:** After each tool execution, emits a `notifications/message` with `logger: "audit"`. Zero configuration — the MCP client (flux) decides whether to consume audit events. This keeps the plugin focused on tool logic.
 
 **Key decisions:**
 
 | Decision | Rationale |
 |----------|-----------|
-| **Plugin calls flux's ingest endpoint** | Audit events flow into flux's hash-chained trail, not a separate log |
-| **Shared secret for ingest auth** | Internal-only endpoint; the plugin authenticates with a pre-shared secret, not a JWT |
-| **wtmcp audit stays as-is** | Operational debugging (why did a tool call fail?) is separate from compliance (who created this issue?) |
-| **High-value events only** | Not every HTTP request needs a hash-chained audit entry — only tool executions that change state |
-| **ActorType distinguishes sources** | `"human"` = user clicked a button, `"agent"` = chat agent called a tool, `"soda"` = pipeline phase executed an action |
+| **MCP logging, not HTTP endpoint** | No new infrastructure. Standard protocol. Same pipe as tool calls. |
+| **wtmcp local audit stays as-is** | Operational debugging (why did a tool call fail?) is separate from compliance (who created this issue?) |
+| **High-value events only** | Not every HTTP request needs a hash-chained entry — only tool executions that change state |
+| **ActorType distinguishes sources** | `"human"` = user clicked a button, `"agent"` = chat agent, `"soda"` = pipeline phase |
 
 ### Threat: Resource Exhaustion
 
