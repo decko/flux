@@ -323,6 +323,107 @@ The plugin wraps the full GitHub API surface that both consumers need:
 | `trigger_sync` | Trigger a manual sync for a project | Write (admin) |
 | `query_audit` | Query the hash-chained audit trail | Read (admin) |
 
+## Chat UX
+
+The chat interface uses three UX primitives to make conversation productive:
+
+### 1. Artifact Cards
+
+When the LLM references a GitHub entity (issue, PR, pipeline run), the UI renders a rich card instead of plain text. The LLM doesn't format the card — it just returns structured data from tool calls. The UI resolves `[artifact:issue:42]` markers into live cards.
+
+```
+┌─────────────────────────────────────┐
+│ decko/flux · #42 · Open             │
+│ Fix login redirect bug              │
+│                                     │
+│ The login page redirects to /       │
+│ instead of the original URL...      │
+│                                     │
+│ Labels: bug, high-priority          │
+│ Assignee: decko                     │
+│ [View on GitHub →]                  │
+└─────────────────────────────────────┘
+```
+
+**Design decisions:**
+- The LLM never generates card HTML — the tool result carries the data, the UI renders it
+- Cards collapse by default, expand on click for full body text
+- Cards are immutable snapshots at the time of the tool call — they don't auto-refresh
+
+### 2. Action Cards
+
+Write tools render as inline proposals with confirmation buttons. Before approval, they show a dashed border and "waiting" state. After approval/denial, they flip to a result card.
+
+```
+🔧 Create GitHub issue
+   Repo: decko/flux
+   Title: "Add rate limiting to API"
+   Labels: enhancement
+   [Approve] [Deny]
+```
+
+**Design decisions:**
+- Confirmation is inline in the conversation, not a modal — keeps context visible
+- The user can edit parameters before approving (click the card to expand form fields)
+- Denied actions show as greyed-out cards in the conversation
+- Each action card maps to exactly one tool call — multiple write tools produce multiple cards
+
+### 3. Conversation Tracker
+
+A side panel or collapsible section that tracks everything touched in the current conversation. It's a summary, not a detailed log — each entry links to the actual item.
+
+```
+Conversation tracker                [×]
+
+📋 Referenced:
+  #42 Fix login redirect bug
+  PR #17 Update auth middleware
+
+🔧 Created:
+  #43 Add rate limiting to API
+
+📝 Reviewed:
+  PR #17 (APPROVED)
+
+⚡ Triggered:
+  Pipeline "review" for #42
+```
+
+**Design decisions:**
+- Updates live as tool calls complete — no manual refresh
+- Clicking an entry navigates to the item in flux or opens GitHub
+- Tracker persists for the session but clears on page refresh (MVP — no persistence)
+- Entries are grouped by action type with distinct icons
+
+### Layout
+
+The chat page uses a two-column layout: conversation on the left, tracker on the right. On mobile, the tracker collapses to a header bar above the input.
+
+```
+┌────────────────────────────┬──────────┐
+│ Chat                 [×]   │ Tracker  │
+│                            │          │
+│ [messages with artifact    │ 📋 Ref'd │
+│  cards and action cards]   │ 🔧 Creat │
+│                            │ 📝 Rev'd │
+│                            │ ⚡ Trig'd│
+│                            │          │
+│ ┌──────────────────────────┴──────────┘
+│ │ [project selector] [message input         ] [Send]
+│ └────────────────────────────────────────────
+└──────────────────────────────────────────────
+```
+
+### Implementation notes
+
+| Concern | Approach |
+|---------|----------|
+| **Card rendering** | Data-driven — the SSE stream carries typed events (`tool_call`, `tool_result`, `artifact`). The UI maps event types to React components. |
+| **Artifact resolution** | When a tool result contains an issue/PR ID, the UI fetches the full card data from flux's API (or GitHub via the tool result payload) and caches it for the session. |
+| **Tracker state** | In-memory React state (`useReducer`). No persistence for MVP. Clears on page refresh. |
+| **Accessibility** | Cards use `article` role. Action buttons are keyboard-navigable. Tracker uses a `region` landmark with `aria-label`. |
+| **Streaming behavior** | Text streams token-by-token. Tool calls appear as inline cards mid-stream. The LLM can interleave text and tool calls in a single response. |
+
 ## Open Questions for Discussion
 
 ### UX & Interaction Model
