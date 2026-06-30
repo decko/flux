@@ -441,8 +441,11 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 	} else {
 		s.status.LastSyncError = ""
 	}
-	s.status.TicketsSynced = ticketCount
-	s.status.PRsSynced = prCount
+	// Fetch current DB totals so the dashboard sync bar matches the stat cards.
+	ticketTotal, _ := s.TicketRepo.List(ctx, repository.TicketFilter{ProjectID: projectID})
+	prTotal, _ := s.PRRepo.List(ctx, repository.PullRequestFilter{ProjectID: projectID})
+	s.status.TicketsSynced = len(ticketTotal)
+	s.status.PRsSynced = len(prTotal)
 	s.mu.Unlock()
 
 	s.logger.Info("sync complete",
