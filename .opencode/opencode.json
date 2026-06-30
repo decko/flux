@@ -55,7 +55,7 @@
       }
     },
     "go-architect": {
-      "model": "opencode-go/qwen3.7-plus",
+      "model": "opencode-go/kimi-k2.7-code",
       "permission": {
         "lsp": "allow"
       }
