@@ -42,6 +42,7 @@ Every public type, function, and interface must have godoc comments. Update `doc
 | senior-qe | v4-pro (high effort) | Adversarial final gate (cross-domain, requirement fit) |
 | discuss-implementation | minimax-m3 | Implementation effort, tradeoffs, simpler alternatives |
 | discuss-risk | nemotron-3-ultra | Risk analysis, requirement gaps, edge cases, UX concerns |
+| frontend-architect | minimax-m3 | Frontend architecture, component design, UI patterns |
 | go-scout | v4-flash | Codebase exploration |
 
 ## Workflow

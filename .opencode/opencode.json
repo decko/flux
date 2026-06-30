@@ -108,6 +108,13 @@
       "permission": {
         "lsp": "allow"
       }
+    },
+    "frontend-architect": {
+      "model": "opencode/minimax-m3-free",
+      "mode": "subagent",
+      "permission": {
+        "lsp": "allow"
+      }
     }
   }
 }
