@@ -30,7 +30,7 @@ Every public type, function, and interface must have godoc comments. Update `doc
 |-------|-------|------|
 | flux-expert | v4-pro | Orchestrator (default agent) |
 | feature-intake | qwen3.7-max | Impact assessment before planning |
-| go-architect | kimi-k2.6 | High-level design decisions |
+| go-architect | kimi-k2.7-code | High-level design decisions |
 | go-tester | v4-flash | Write tests (TDD red phase) |
 | go-coder | v4-flash (max effort) | Implementation (TDD green phase) |
 | frontend-coder | v4-flash (max effort) | TypeScript/React implementation |

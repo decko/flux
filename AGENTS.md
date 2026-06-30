@@ -184,7 +184,7 @@ The `flux-expert` agent orchestrates development. It delegates to:
 |-------|-------|------|
 | flux-expert | v4-pro | Orchestrator (default agent) |
 | feature-intake | qwen3.7-max | Impact assessment before planning |
-| go-architect | kimi-k2.6 | Architecture decisions |
+| go-architect | kimi-k2.7-code | Architecture decisions |
 | go-tester | v4-flash | Write tests (TDD) |
 | go-coder | v4-flash (max) | Go implementation |
 | frontend-coder | v4-flash (max) | TypeScript/React implementation |
