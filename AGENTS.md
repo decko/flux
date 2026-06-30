@@ -194,6 +194,8 @@ The `flux-expert` agent orchestrates development. It delegates to:
 | frontend-reviewer | qwen3.7-max | Frontend review (5-layer pipeline) |
 | frontend-reviewer2 | kimi-k2.7-code | Frontend review (5-layer pipeline, second opinion) |
 | senior-qe | v4-pro (high) | Adversarial final gate (cross-domain, requirement fit) |
+| discuss-implementation | minimax-m3 | Implementation effort, tradeoffs, simpler alternatives |
+| discuss-risk | nemotron-3-ultra | Risk analysis, requirement gaps, edge cases, UX concerns |
 | go-scout | v4-flash | Codebase exploration |
 
 ### Multi-Agent Analysis (for architectural decisions)
@@ -204,10 +206,11 @@ When the user presents an open-ended architectural question (not a bug fix or fe
 
 **Pattern:**
 
-1. **Parallel dispatch**: Send the idea to 3 agents simultaneously, each with a distinct lens:
+1. **Parallel dispatch**: Send the idea to 4 agents simultaneously, each with a distinct lens:
    - `go-architect` — schema, patterns, risks ("analyze from an architectural perspective")
    - `go-reviewer` — security, integrity, pitfalls ("analyze from a security perspective")
-   - `general` — implementation effort, tradeoffs, simpler alternatives ("analyze from an implementation perspective")
+   - `discuss-implementation` — implementation effort, tradeoffs, simpler alternatives ("analyze from an implementation perspective")
+   - `discuss-risk` — requirement gaps, edge cases, cross-domain impact, UX ("analyze from a risk and requirements perspective")
 
 2. **Give each agent the original idea verbatim**, plus this instruction:
    ```
