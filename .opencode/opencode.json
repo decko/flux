@@ -94,6 +94,20 @@
       "permission": {
         "lsp": "allow"
       }
+    },
+    "discuss-implementation": {
+      "model": "opencode/minimax-m3-free",
+      "mode": "subagent",
+      "permission": {
+        "lsp": "allow"
+      }
+    },
+    "discuss-risk": {
+      "model": "opencode/nemotron-3-ultra-free",
+      "mode": "subagent",
+      "permission": {
+        "lsp": "allow"
+      }
     }
   }
 }

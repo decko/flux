@@ -40,6 +40,8 @@ Every public type, function, and interface must have godoc comments. Update `doc
 | frontend-reviewer | qwen3.7-max | Frontend review (5-layer pipeline) |
 | frontend-reviewer2 | kimi-k2.7-code | Frontend review (5-layer pipeline, second opinion) |
 | senior-qe | v4-pro (high effort) | Adversarial final gate (cross-domain, requirement fit) |
+| discuss-implementation | minimax-m3 | Implementation effort, tradeoffs, simpler alternatives |
+| discuss-risk | nemotron-3-ultra | Risk analysis, requirement gaps, edge cases, UX concerns |
 | go-scout | v4-flash | Codebase exploration |
 
 ## Workflow
