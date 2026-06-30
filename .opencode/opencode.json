@@ -96,7 +96,7 @@
       }
     },
     "discuss-implementation": {
-      "model": "opencode/minimax-m3-free",
+      "model": "opencode-go/minimax-m3",
       "mode": "subagent",
       "permission": {
         "lsp": "allow"
@@ -110,7 +110,7 @@
       }
     },
     "frontend-architect": {
-      "model": "opencode/minimax-m3-free",
+      "model": "opencode-go/minimax-m3",
       "mode": "subagent",
       "permission": {
         "lsp": "allow"
