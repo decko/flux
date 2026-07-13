@@ -18,8 +18,8 @@ import (
 
 // setupTriggerRuleTestDB opens an in-memory SQLite database, configures it for
 // SQLite use, runs all migrations, and returns a SQLiteTriggerRuleRepository
-// for testing.
-func setupTriggerRuleTestDB(t *testing.T) *repository.SQLiteTriggerRuleRepository {
+// and the underlying *sqlx.DB for seeding parent data.
+func setupTriggerRuleTestDB(t *testing.T) (*repository.SQLiteTriggerRuleRepository, *sqlx.DB) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", ":memory:")
@@ -36,7 +36,22 @@ func setupTriggerRuleTestDB(t *testing.T) *repository.SQLiteTriggerRuleRepositor
 		t.Fatalf("migrate: %v", err)
 	}
 	sdb := sqlx.NewDb(db, "sqlite")
-	return repository.NewSQLiteTriggerRuleRepository(sdb)
+	return repository.NewSQLiteTriggerRuleRepository(sdb), sdb
+}
+
+// seedProject inserts a minimal project row so that foreign key constraints
+// on trigger_rules.project_id are satisfied.
+func seedProject(t *testing.T, sdb *sqlx.DB, projectID string) {
+	t.Helper()
+	now := time.Now().UTC()
+	_, err := sdb.ExecContext(context.Background(),
+		`INSERT INTO projects (id, name, repo_url, github_installation_id, webhook_id, definition, adapters, pipelines, created_at, updated_at)
+		 VALUES (?, ?, ?, 0, 0, '{}', '[]', '[]', ?, ?)`,
+		projectID, projectID, "https://github.com/"+projectID+"/repo", now, now,
+	)
+	if err != nil {
+		t.Fatalf("seed project %s: %v", projectID, err)
+	}
 }
 
 func testTriggerRule(id, projectID, label, pipeline string, enabled bool, priority int) model.TriggerRule {
@@ -55,8 +70,12 @@ func testTriggerRule(id, projectID, label, pipeline string, enabled bool, priori
 }
 
 func TestSQLiteTriggerRuleRepo_CreateAndListByProject(t *testing.T) {
-	repo := setupTriggerRuleTestDB(t)
+	repo, sdb := setupTriggerRuleTestDB(t)
 	ctx := context.Background()
+
+	// Seed parent projects so foreign key constraints are satisfied.
+	seedProject(t, sdb, "proj-1")
+	seedProject(t, sdb, "proj-2")
 
 	r1 := testTriggerRule(uuid.New().String(), "proj-1", "bug", "fix", true, 10)
 	r2 := testTriggerRule(uuid.New().String(), "proj-1", "feature", "dev", true, 5)
@@ -103,7 +122,7 @@ func TestSQLiteTriggerRuleRepo_CreateAndListByProject(t *testing.T) {
 }
 
 func TestSQLiteTriggerRuleRepo_ListByProject_Empty(t *testing.T) {
-	repo := setupTriggerRuleTestDB(t)
+	repo, _ := setupTriggerRuleTestDB(t)
 	ctx := context.Background()
 
 	rules, err := repo.ListByProject(ctx, "nonexistent")
@@ -119,8 +138,11 @@ func TestSQLiteTriggerRuleRepo_ListByProject_Empty(t *testing.T) {
 }
 
 func TestSQLiteTriggerRuleRepo_Update(t *testing.T) {
-	repo := setupTriggerRuleTestDB(t)
+	repo, sdb := setupTriggerRuleTestDB(t)
 	ctx := context.Background()
+
+	// Seed parent project so foreign key constraint is satisfied.
+	seedProject(t, sdb, "proj-1")
 
 	rule := testTriggerRule(uuid.New().String(), "proj-1", "bug", "fix", true, 10)
 	must(t, repo.Create(ctx, rule))
@@ -155,7 +177,7 @@ func TestSQLiteTriggerRuleRepo_Update(t *testing.T) {
 }
 
 func TestSQLiteTriggerRuleRepo_Update_NotFound(t *testing.T) {
-	repo := setupTriggerRuleTestDB(t)
+	repo, _ := setupTriggerRuleTestDB(t)
 	ctx := context.Background()
 
 	rule := testTriggerRule("nonexistent", "proj-1", "bug", "fix", true, 10)
@@ -166,8 +188,11 @@ func TestSQLiteTriggerRuleRepo_Update_NotFound(t *testing.T) {
 }
 
 func TestSQLiteTriggerRuleRepo_Delete(t *testing.T) {
-	repo := setupTriggerRuleTestDB(t)
+	repo, sdb := setupTriggerRuleTestDB(t)
 	ctx := context.Background()
+
+	// Seed parent project so foreign key constraint is satisfied.
+	seedProject(t, sdb, "proj-1")
 
 	rule := testTriggerRule(uuid.New().String(), "proj-1", "bug", "fix", true, 10)
 	must(t, repo.Create(ctx, rule))
@@ -184,7 +209,7 @@ func TestSQLiteTriggerRuleRepo_Delete(t *testing.T) {
 }
 
 func TestSQLiteTriggerRuleRepo_Delete_NotFound(t *testing.T) {
-	repo := setupTriggerRuleTestDB(t)
+	repo, _ := setupTriggerRuleTestDB(t)
 	ctx := context.Background()
 
 	err := repo.Delete(ctx, "nonexistent")
