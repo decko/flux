@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/decko/flux/internal/adapter/orchestrator"
@@ -19,6 +20,10 @@ type PipelineRunService struct {
 	orchestrator *orchestrator.OrchestratorAdapter
 	audit        *AuditService
 }
+
+// ErrRunNotPending is returned when Trigger is called on a pipeline run that
+// is not in pending status. Only pending runs can be triggered.
+var ErrRunNotPending = errors.New("pipeline run is not in pending status")
 
 // PipelineRunServiceOption configures a PipelineRunService.
 type PipelineRunServiceOption func(*PipelineRunService)
@@ -105,6 +110,7 @@ func (s *PipelineRunService) Update(ctx context.Context, run model.PipelineRun) 
 // It fetches the run by ID, delegates to the orchestrator's Trigger method,
 // sets the run status to running, and persists the update.
 // Returns ErrNotFound if the pipeline run does not exist.
+// Returns ErrRunNotPending if the run is not in pending status.
 // Returns an error if no orchestrator adapter is configured.
 func (s *PipelineRunService) Trigger(ctx context.Context, runID string) error {
 	return s.TriggerWithTicketID(ctx, runID, "")
@@ -112,6 +118,7 @@ func (s *PipelineRunService) Trigger(ctx context.Context, runID string) error {
 
 // TriggerWithTicketID starts execution of a pipeline run, using the given external
 // ticket ID when passing to the orchestrator (soda expects a GitHub issue number).
+// Returns ErrRunNotPending if the run is not in pending status.
 func (s *PipelineRunService) TriggerWithTicketID(ctx context.Context, runID, externalTicketID string) error {
 	if s.orchestrator == nil {
 		return fmt.Errorf("orchestrator not configured")
@@ -119,6 +126,9 @@ func (s *PipelineRunService) TriggerWithTicketID(ctx context.Context, runID, ext
 	run, err := s.repo.Get(ctx, runID)
 	if err != nil {
 		return fmt.Errorf("trigger pipeline run: %w", err)
+	}
+	if run.Status != model.RunStatusPending {
+		return ErrRunNotPending
 	}
 	// Use the external ticket ID if provided (soda expects GitHub issue numbers).
 	if externalTicketID != "" {

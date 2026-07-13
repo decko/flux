@@ -337,6 +337,43 @@ func TestPipelineRunService_Trigger_NotFound(t *testing.T) {
 	}
 }
 
+func TestPipelineRunService_Trigger_AlreadyActive(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	orch := &stubOrchestrator{}
+	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
+	ctx := context.Background()
+
+	tests := []struct {
+		name   string
+		status model.RunStatus
+	}{
+		{"running", model.RunStatusRunning},
+		{"completed", model.RunStatusCompleted},
+		{"failed", model.RunStatusFailed},
+		{"canceled", model.RunStatusCanceled},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := testPipelineRun("run-"+tt.name, "proj-1", "ticket-1", tt.status)
+			must(t, svc.Create(ctx, run))
+
+			err := svc.Trigger(ctx, run.ID)
+			if !errors.Is(err, domain.ErrRunNotPending) {
+				t.Fatalf("expected ErrRunNotPending for status %q, got %v", tt.status, err)
+			}
+
+			// Verify orchestrator was NOT called.
+			orch.mu.Lock()
+			calls := len(orch.triggeredIDs)
+			orch.mu.Unlock()
+			if calls > 0 {
+				t.Errorf("orchestrator was called %d times, want 0 for non-pending run", calls)
+			}
+		})
+	}
+}
+
 func TestPipelineRunService_Trigger_NoOrchestrator(t *testing.T) {
 	repo := newMockPipelineRunRepo()
 	svc := domain.NewPipelineRunService(repo) // no orchestrator
@@ -518,8 +555,6 @@ func TestPipelineRunService_AuditNil(t *testing.T) {
 		t.Errorf("got ID %q, want %q", got.ID, run.ID)
 	}
 
-	run.Status = model.RunStatusRunning
-	must(t, svc.Update(ctx, run))
 	must(t, svc.Trigger(ctx, "run-noaudit"))
 	must(t, svc.Cancel(ctx, "run-noaudit"))
 }

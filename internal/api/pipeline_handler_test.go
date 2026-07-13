@@ -659,6 +659,33 @@ func TestHandleTriggerPipelineRun_NotFound(t *testing.T) {
 	}
 }
 
+func TestHandleTriggerPipelineRun_Conflict(t *testing.T) {
+	orch := &stubOrchestrator{}
+	srv, seed := setupPipelineServerWithOrch(t, orch)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	run := seed(t, model.PipelineRun{
+		ProjectID:    "proj-1",
+		TicketID:     "ticket-1",
+		Orchestrator: "soda",
+		Pipeline:     "plan",
+		Status:       model.RunStatusRunning,
+	})
+
+	u := fmt.Sprintf("%s/api/v1/pipeline-runs/%s/trigger", ts.URL, run.ID)
+	req := authedRequest(http.MethodPost, u, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", u, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusConflict)
+	}
+}
+
 func TestHandleCancelPipelineRun(t *testing.T) {
 	orch := &stubOrchestrator{}
 	srv, seed := setupPipelineServerWithOrch(t, orch)
