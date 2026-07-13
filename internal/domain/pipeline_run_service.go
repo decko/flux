@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/decko/flux/internal/adapter/orchestrator"
 	"github.com/decko/flux/internal/model"
@@ -107,8 +108,8 @@ func (s *PipelineRunService) Update(ctx context.Context, run model.PipelineRun) 
 }
 
 // Trigger initiates execution of a pipeline run by notifying the orchestrator.
-// It fetches the run by ID, delegates to the orchestrator's Trigger method,
-// sets the run status to running, and persists the update.
+// It sets the run to running, invokes the orchestrator, and then sets the
+// terminal state (completed or failed) based on the orchestrator result.
 // Returns ErrNotFound if the pipeline run does not exist.
 // Returns ErrRunNotPending if the run is not in pending status.
 // Returns an error if no orchestrator adapter is configured.
@@ -134,10 +135,24 @@ func (s *PipelineRunService) TriggerWithTicketID(ctx context.Context, runID, ext
 	if externalTicketID != "" {
 		run.TicketID = externalTicketID
 	}
-	if err := (*s.orchestrator).Trigger(ctx, run); err != nil {
+	// Set status to running BEFORE invoking the orchestrator, so the run is
+	// observable as in-progress even if the orchestrator call takes a long time.
+	run.Status = model.RunStatusRunning
+	if err := s.repo.Update(ctx, run); err != nil {
 		return fmt.Errorf("trigger pipeline run: %w", err)
 	}
-	run.Status = model.RunStatusRunning
+
+	// Invoke the orchestrator. This may block for minutes to hours.
+	orchErr := (*s.orchestrator).Trigger(ctx, run)
+
+	// Set terminal state based on orchestrator result.
+	now := time.Now().UTC()
+	run.CompletedAt = &now
+	if orchErr != nil {
+		run.Status = model.RunStatusFailed
+	} else {
+		run.Status = model.RunStatusCompleted
+	}
 	if err := s.repo.Update(ctx, run); err != nil {
 		return fmt.Errorf("trigger pipeline run: %w", err)
 	}
@@ -146,7 +161,7 @@ func (s *PipelineRunService) TriggerWithTicketID(ctx context.Context, runID, ext
 			return fmt.Errorf("trigger pipeline run: %w", err)
 		}
 	}
-	return nil
+	return orchErr
 }
 
 // Cancel stops execution of a pipeline run by notifying the orchestrator.

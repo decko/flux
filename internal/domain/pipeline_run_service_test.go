@@ -115,6 +115,31 @@ func (s *stubOrchestrator) Health(_ context.Context) error {
 	return nil
 }
 
+// failingStubOrchestrator is a stub that returns an error from Trigger,
+// used to test the failure path where the orchestrator invocation fails.
+type failingStubOrchestrator struct {
+	mu           sync.Mutex
+	triggeredIDs []string
+}
+
+func (s *failingStubOrchestrator) Name() string { return "failing-stub" }
+
+func (s *failingStubOrchestrator) Trigger(_ context.Context, run model.PipelineRun) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.triggeredIDs = append(s.triggeredIDs, run.ID)
+	return errors.New("orchestrator: simulated failure")
+}
+
+func (s *failingStubOrchestrator) Cancel(_ context.Context, runID string) error { return nil }
+func (s *failingStubOrchestrator) Status(_ context.Context, _ string) (*model.PipelineRun, error) {
+	return nil, nil
+}
+func (s *failingStubOrchestrator) Logs(_ context.Context, _ string) (<-chan orchestrator.LogEntry, error) {
+	return nil, nil
+}
+func (s *failingStubOrchestrator) Health(_ context.Context) error { return nil }
+
 // ─── Test Helper ────────────────────────────────────────────────────────────
 
 func testPipelineRun(id, projectID, ticketID string, status model.RunStatus) model.PipelineRun {
@@ -309,11 +334,14 @@ func TestPipelineRunService_Trigger(t *testing.T) {
 	err := svc.Trigger(ctx, "run-1")
 	must(t, err)
 
-	// Verify status was updated to running.
+	// Verify status was updated to completed (orchestrator succeeded).
 	got, err := svc.Get(ctx, "run-1")
 	must(t, err)
-	if got.Status != model.RunStatusRunning {
-		t.Errorf("got Status %q, want %q", got.Status, model.RunStatusRunning)
+	if got.Status != model.RunStatusCompleted {
+		t.Errorf("got Status %q, want %q", got.Status, model.RunStatusCompleted)
+	}
+	if got.CompletedAt == nil {
+		t.Error("expected CompletedAt to be set on success")
 	}
 
 	// Verify adapter.Trigger was called.
@@ -385,6 +413,39 @@ func TestPipelineRunService_Trigger_NoOrchestrator(t *testing.T) {
 	err := svc.Trigger(ctx, "run-1")
 	if err == nil {
 		t.Fatal("expected error when orchestrator is not configured, got nil")
+	}
+}
+
+func TestPipelineRunService_Trigger_OrchFailure(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	orch := &failingStubOrchestrator{}
+	svc := domain.NewPipelineRunService(repo, domain.WithOrchestrator(orch))
+	ctx := context.Background()
+
+	run := testPipelineRun("run-fail", "proj-1", "ticket-1", model.RunStatusPending)
+	must(t, svc.Create(ctx, run))
+
+	err := svc.Trigger(ctx, "run-fail")
+	if err == nil {
+		t.Fatal("expected error from failing orchestrator, got nil")
+	}
+
+	// Verify status was updated to failed.
+	got, err := svc.Get(ctx, "run-fail")
+	must(t, err)
+	if got.Status != model.RunStatusFailed {
+		t.Errorf("got Status %q, want %q", got.Status, model.RunStatusFailed)
+	}
+	if got.CompletedAt == nil {
+		t.Error("expected CompletedAt to be set on failure")
+	}
+
+	// Verify adapter.Trigger was called.
+	orch.mu.Lock()
+	triggered := len(orch.triggeredIDs) == 1 && orch.triggeredIDs[0] == "run-fail"
+	orch.mu.Unlock()
+	if !triggered {
+		t.Errorf("expected adapter.Trigger to be called; calls: %v", orch.triggeredIDs)
 	}
 }
 

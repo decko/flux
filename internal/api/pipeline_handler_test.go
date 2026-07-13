@@ -631,6 +631,17 @@ func TestHandleTriggerPipelineRun(t *testing.T) {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusAccepted)
 	}
 
+	// Wait for the async goroutine to call the orchestrator.
+	for i := 0; i < 50; i++ {
+		orch.mu.Lock()
+		triggered := len(orch.triggeredIDs)
+		orch.mu.Unlock()
+		if triggered > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	// Verify the orchestrator was called with the correct run ID.
 	orch.mu.Lock()
 	triggered := len(orch.triggeredIDs) == 1 && orch.triggeredIDs[0] == run.ID
