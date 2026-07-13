@@ -22,6 +22,9 @@ func serviceError(err error) (int, string) {
 	if errors.Is(err, domain.ErrWebhookNotConfigured) || errors.Is(err, domain.ErrWebhookURLNotSet) {
 		return http.StatusServiceUnavailable, err.Error()
 	}
+	if errors.Is(err, domain.ErrRunNotPending) {
+		return http.StatusConflict, "pipeline run is not in pending status"
+	}
 	if errors.Is(err, domain.ErrNoGitHubAdapter) || errors.Is(err, domain.ErrNoWebhookRegistered) {
 		return http.StatusBadRequest, err.Error()
 	}
