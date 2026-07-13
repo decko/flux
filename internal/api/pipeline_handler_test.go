@@ -631,6 +631,17 @@ func TestHandleTriggerPipelineRun(t *testing.T) {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusAccepted)
 	}
 
+	// Wait for the async goroutine to call the orchestrator.
+	for i := 0; i < 50; i++ {
+		orch.mu.Lock()
+		triggered := len(orch.triggeredIDs)
+		orch.mu.Unlock()
+		if triggered > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	// Verify the orchestrator was called with the correct run ID.
 	orch.mu.Lock()
 	triggered := len(orch.triggeredIDs) == 1 && orch.triggeredIDs[0] == run.ID
@@ -656,6 +667,33 @@ func TestHandleTriggerPipelineRun_NotFound(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestHandleTriggerPipelineRun_Conflict(t *testing.T) {
+	orch := &stubOrchestrator{}
+	srv, seed := setupPipelineServerWithOrch(t, orch)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	run := seed(t, model.PipelineRun{
+		ProjectID:    "proj-1",
+		TicketID:     "ticket-1",
+		Orchestrator: "soda",
+		Pipeline:     "plan",
+		Status:       model.RunStatusRunning,
+	})
+
+	u := fmt.Sprintf("%s/api/v1/pipeline-runs/%s/trigger", ts.URL, run.ID)
+	req := authedRequest(http.MethodPost, u, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", u, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusConflict)
 	}
 }
 

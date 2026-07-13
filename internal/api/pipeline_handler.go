@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -108,40 +109,63 @@ func (s *Server) handleCreatePipelineRun(w http.ResponseWriter, r *http.Request)
 }
 
 // handleTriggerPipelineRun handles POST /api/v1/pipeline-runs/{id}/trigger.
-// It delegates to the pipeline run service to notify the orchestrator and
-// set the run status to running. Returns 202 Accepted on success.
+// It validates the run exists and is pending, then spawns a goroutine to execute
+// the orchestrator asynchronously. Returns 202 Accepted immediately — the caller
+// should poll GET /pipeline-runs/{id} to observe status transitions from pending
+// to running to completed/failed.
 func (s *Server) handleTriggerPipelineRun(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	// Try using the ticket external ID (soda expects GitHub issue numbers).
-	if s.ticketSvc != nil {
-		if run, err := s.pipelineSvc.Get(r.Context(), id); err == nil {
-			if tkt, tktErr := s.ticketSvc.Get(r.Context(), run.TicketID); tktErr == nil && tkt.ExternalID != "" {
-				err = s.pipelineSvc.TriggerWithTicketID(r.Context(), id, tkt.ExternalID)
-				if err == nil {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusAccepted)
-					_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
-					return
-				}
-				code, msg := serviceError(err)
-				if code == http.StatusInternalServerError {
-					slog.Error("trigger pipeline run", "error", err, "request_id", middleware.GetReqID(r.Context()))
-				}
-				writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
-				return
-			}
-		}
-	}
-
-	if err := s.pipelineSvc.Trigger(r.Context(), id); err != nil {
+	// Fetch the run once — validates it exists and lets us check status.
+	run, err := s.pipelineSvc.Get(r.Context(), id)
+	if err != nil {
 		code, msg := serviceError(err)
-		if code == http.StatusInternalServerError {
-			slog.Error("trigger pipeline run", "error", err, "request_id", middleware.GetReqID(r.Context()))
-		}
 		writeJSONError(w, code, msg, middleware.GetReqID(r.Context()))
 		return
 	}
+	if run.Status != model.RunStatusPending {
+		writeJSONError(w, http.StatusConflict, "pipeline run is not in pending status", middleware.GetReqID(r.Context()))
+		return
+	}
+
+	// Try using the ticket external ID (soda expects GitHub issue numbers).
+	externalTicketID := ""
+	if s.ticketSvc != nil {
+		if tkt, tktErr := s.ticketSvc.Get(r.Context(), run.TicketID); tktErr == nil && tkt.ExternalID != "" {
+			externalTicketID = tkt.ExternalID
+		} else if tktErr != nil {
+			slog.WarnContext(r.Context(), "ticket lookup failed, proceeding without external ID",
+				"run_id", id, "ticket_id", run.TicketID, "error", tktErr)
+		}
+	}
+
+	// Fire-and-forget: execute the orchestrator in a background goroutine
+	// with a detached context so the request lifecycle doesn't kill soda.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("trigger pipeline run panicked", "run_id", id, "panic", r)
+				// Best-effort: mark run as failed so the frontend doesn't show
+				// a perpetually-running spinner. If this also fails, the
+				// reconciler (#281) will catch it.
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				run, err := s.pipelineSvc.Get(ctx, id)
+				if err != nil {
+					return
+				}
+				run.Status = model.RunStatusFailed
+				now := time.Now().UTC()
+				run.CompletedAt = &now
+				_ = s.pipelineSvc.Update(ctx, run)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
+		defer cancel()
+		if err := s.pipelineSvc.TriggerWithTicketID(ctx, id, externalTicketID); err != nil {
+			slog.WarnContext(ctx, "trigger pipeline run failed", "run_id", id, "error", err)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
