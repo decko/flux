@@ -164,6 +164,36 @@ func (s *PipelineRunService) TriggerWithTicketID(ctx context.Context, runID, ext
 	return orchErr
 }
 
+// ReconcileStrandedRuns transitions running pipeline runs that started before
+// the given threshold to failed. This is intended to be called periodically
+// (e.g., every 5 minutes) and on startup to recover runs orphaned by a process
+// crash. Returns the number of runs reconciled.
+func (s *PipelineRunService) ReconcileStrandedRuns(ctx context.Context, maxAge time.Duration) (int, error) {
+	runs, err := s.repo.List(ctx, repository.PipelineRunFilter{Status: model.RunStatusRunning})
+	if err != nil {
+		return 0, fmt.Errorf("reconcile: list running runs: %w", err)
+	}
+
+	cutoff := time.Now().UTC().Add(-maxAge)
+	var count int
+	for _, run := range runs {
+		if !run.StartedAt.Before(cutoff) {
+			continue
+		}
+		now := time.Now().UTC()
+		run.Status = model.RunStatusFailed
+		run.CompletedAt = &now
+		if err := s.repo.Update(ctx, run); err != nil {
+			return count, fmt.Errorf("reconcile: update run %s: %w", run.ID, err)
+		}
+		if s.audit != nil {
+			_ = s.audit.Record(ctx, "pipeline_run.reconciled", "pipeline_run", run.ID, "stranded run recovered")
+		}
+		count++
+	}
+	return count, nil
+}
+
 // Cancel stops execution of a pipeline run by notifying the orchestrator.
 // It fetches the run by ID, delegates to the orchestrator's Cancel method,
 // sets the run status to canceled, and persists the update.
