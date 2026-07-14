@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/decko/flux/internal/model"
@@ -56,10 +58,24 @@ func (a *SodaAdapter) sodaArgs(args ...string) []string {
 	return args
 }
 
+// sodaEnv returns a minimal environment for soda subprocesses, avoiding
+// leakage of server secrets (JWT_SECRET, GITHUB_TOKEN, etc.). Only PATH
+// and HOME are passed through; soda-specific vars can be added here.
+func (a *SodaAdapter) sodaEnv() []string {
+	var env []string
+	for _, key := range []string{"PATH", "HOME"} {
+		if v := os.Getenv(key); v != "" {
+			env = append(env, key+"="+v)
+		}
+	}
+	return env
+}
+
 // Health verifies that the soda binary exists and is executable by running
 // "soda --version".
 func (a *SodaAdapter) Health(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, a.path, a.sodaArgs("--version")...)
+	cmd.Env = a.sodaEnv()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -82,11 +98,20 @@ func (a *SodaAdapter) Trigger(ctx context.Context, run model.PipelineRun) error 
 		return fmt.Errorf("soda trigger: invalid ticket ID %q: must be a positive integer", run.TicketID)
 	}
 
+	// Validate pipeline name — reject values that could be interpreted as
+	// additional flags or attempt path traversal.
+	if run.Pipeline != "" {
+		if strings.HasPrefix(run.Pipeline, "-") || strings.ContainsAny(run.Pipeline, "/\\ \t") {
+			return fmt.Errorf("soda trigger: invalid pipeline name %q", run.Pipeline)
+		}
+	}
+
 	args := []string{"run", run.TicketID}
 	if run.Pipeline != "" {
 		args = append(args, "--pipeline", run.Pipeline)
 	}
 	cmd := exec.CommandContext(ctx, a.path, args...)
+	cmd.Env = a.sodaEnv()
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("soda trigger: %w", err)
 	}
@@ -97,6 +122,7 @@ func (a *SodaAdapter) Trigger(ctx context.Context, run model.PipelineRun) error 
 // response from "soda status --run-id <runID>".
 func (a *SodaAdapter) Status(ctx context.Context, runID string) (*model.PipelineRun, error) {
 	cmd := exec.CommandContext(ctx, a.path, a.sodaArgs("status", "--run-id", runID)...)
+	cmd.Env = a.sodaEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -117,6 +143,7 @@ func (a *SodaAdapter) Status(ctx context.Context, runID string) (*model.Pipeline
 // Cancel stops a running pipeline run by executing "soda cancel --run-id <runID>".
 func (a *SodaAdapter) Cancel(ctx context.Context, runID string) error {
 	cmd := exec.CommandContext(ctx, a.path, a.sodaArgs("cancel", "--run-id", runID)...)
+	cmd.Env = a.sodaEnv()
 	return cmd.Run()
 }
 
@@ -125,6 +152,7 @@ func (a *SodaAdapter) Cancel(ctx context.Context, runID string) error {
 // when the run completes or the context is canceled.
 func (a *SodaAdapter) Logs(ctx context.Context, runID string) (<-chan LogEntry, error) {
 	cmd := exec.CommandContext(ctx, a.path, a.sodaArgs("logs", "--run-id", runID)...)
+	cmd.Env = a.sodaEnv()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("soda logs: pipe: %w", err)

@@ -276,3 +276,80 @@ func TestSodaAdapter_Trigger_ValidTicketID(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+// ─── Environment hardening ──────────────────────────────────────────────────
+
+func TestSodaAdapter_Trigger_EnvsNotLeaked(t *testing.T) {
+
+	envFile := filepath.Join(t.TempDir(), "soda_env.txt")
+	script := `env | sort > '` + envFile + `'
+exit 0`
+	sodaPath := writeSodaScript(t, script)
+
+	// Set secrets in the parent environment to verify they're NOT inherited.
+	t.Setenv("JWT_SECRET", "super-secret-jwt-key-16chars")
+	t.Setenv("GITHUB_TOKEN", "ghp_fake_token_12345")
+
+	a := NewSodaAdapter(sodaPath)
+	run := model.PipelineRun{
+		ID:       "run-1",
+		TicketID: "42",
+	}
+
+	if err := a.Trigger(context.Background(), run); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	env := string(data)
+	if strings.Contains(env, "JWT_SECRET") {
+		t.Error("JWT_SECRET leaked to soda subprocess environment")
+	}
+	if strings.Contains(env, "GITHUB_TOKEN") {
+		t.Error("GITHUB_TOKEN leaked to soda subprocess environment")
+	}
+}
+
+// ─── Pipeline name validation ───────────────────────────────────────────────
+
+func TestSodaAdapter_Trigger_InvalidPipelineName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		pipeline string
+	}{
+		{"leading dash", "--debug"},
+		{"flag with value", "--config /etc/passwd"},
+		{"path traversal", "../etc/passwd"},
+		{"with slash", "foo/bar"},
+		{"with backslash", "foo\\bar"},
+		{"empty is ok", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sodaPath := writeSodaScript(t, `exit 0`)
+			a := NewSodaAdapter(sodaPath)
+			run := model.PipelineRun{
+				ID:       "run-1",
+				TicketID: "42",
+				Pipeline: tt.pipeline,
+			}
+
+			err := a.Trigger(context.Background(), run)
+			if tt.pipeline == "" {
+				if err != nil {
+					t.Errorf("empty pipeline should be allowed, got: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Errorf("expected error for pipeline %q, got nil", tt.pipeline)
+			}
+		})
+	}
+}
