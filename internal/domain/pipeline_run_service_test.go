@@ -46,11 +46,20 @@ func (r *mockPipelineRunRepo) Get(_ context.Context, id string) (model.PipelineR
 	return run, nil
 }
 
-func (r *mockPipelineRunRepo) List(_ context.Context, _ repository.PipelineRunFilter) ([]model.PipelineRun, error) {
+func (r *mockPipelineRunRepo) List(_ context.Context, filter repository.PipelineRunFilter) ([]model.PipelineRun, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	result := make([]model.PipelineRun, 0, len(r.store))
 	for _, run := range r.store {
+		if filter.Status != "" && run.Status != filter.Status {
+			continue
+		}
+		if filter.ProjectID != "" && run.ProjectID != filter.ProjectID {
+			continue
+		}
+		if filter.TicketID != "" && run.TicketID != filter.TicketID {
+			continue
+		}
 		result = append(result, run)
 	}
 	return result, nil
@@ -618,4 +627,64 @@ func TestPipelineRunService_AuditNil(t *testing.T) {
 
 	must(t, svc.Trigger(ctx, "run-noaudit"))
 	must(t, svc.Cancel(ctx, "run-noaudit"))
+}
+
+// ─── Reconciler ───────────────────────────────────────────────────────────────
+
+func TestPipelineRunService_ReconcileStrandedRuns(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	svc := domain.NewPipelineRunService(repo)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Create runs with various statuses and ages.
+	oldRunning := testPipelineRun("old-running", "proj-1", "t-1", model.RunStatusRunning)
+	oldRunning.StartedAt = now.Add(-2 * time.Hour) // 2 hours ago — stranded
+	recentRunning := testPipelineRun("recent-running", "proj-1", "t-2", model.RunStatusRunning)
+	recentRunning.StartedAt = now.Add(-10 * time.Minute) // 10 min ago — still recent
+	completed := testPipelineRun("completed", "proj-1", "t-3", model.RunStatusCompleted)
+	pending := testPipelineRun("pending", "proj-1", "t-4", model.RunStatusPending)
+
+	for _, run := range []model.PipelineRun{oldRunning, recentRunning, completed, pending} {
+		// Bypass the mock's Create (which would set status) by directly inserting.
+		repo.mu.Lock()
+		repo.store[run.ID] = run
+		repo.mu.Unlock()
+	}
+
+	// Reconcile with a 1-hour threshold — only oldRunning should be affected.
+	count, err := svc.ReconcileStrandedRuns(ctx, 1*time.Hour)
+	must(t, err)
+	if count != 1 {
+		t.Fatalf("expected 1 reconciled run, got %d", count)
+	}
+
+	// Verify oldRunning was transitioned to failed.
+	got, err := svc.Get(ctx, "old-running")
+	must(t, err)
+	if got.Status != model.RunStatusFailed {
+		t.Errorf("got Status %q, want %q", got.Status, model.RunStatusFailed)
+	}
+	if got.CompletedAt == nil {
+		t.Error("expected CompletedAt to be set")
+	}
+
+	// Verify recentRunning was NOT touched.
+	got2, err := svc.Get(ctx, "recent-running")
+	must(t, err)
+	if got2.Status != model.RunStatusRunning {
+		t.Errorf("recent run should still be running, got %q", got2.Status)
+	}
+}
+
+func TestPipelineRunService_ReconcileStrandedRuns_Empty(t *testing.T) {
+	repo := newMockPipelineRunRepo()
+	svc := domain.NewPipelineRunService(repo)
+	ctx := context.Background()
+
+	count, err := svc.ReconcileStrandedRuns(ctx, 1*time.Hour)
+	must(t, err)
+	if count != 0 {
+		t.Errorf("expected 0 reconciled runs, got %d", count)
+	}
 }

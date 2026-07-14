@@ -569,6 +569,33 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		}
 	}()
 
+	// Start pipeline reconciler goroutine — recovers runs stranded by process
+	// crashes. Runs immediately on startup, then every 5 minutes.
+	go func() {
+		threshold := 30 * time.Minute
+		// Run immediately on startup to recover from crash.
+		if count, err := pipelineSvc.ReconcileStrandedRuns(ctx, threshold); err != nil {
+			slog.Error("pipeline reconciler startup sweep", "error", err)
+		} else if count > 0 {
+			slog.Warn("pipeline reconciler: marked stranded runs as failed", "count", count)
+		}
+
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if count, err := pipelineSvc.ReconcileStrandedRuns(ctx, threshold); err != nil {
+					slog.Error("pipeline reconciler", "error", err)
+				} else if count > 0 {
+					slog.Warn("pipeline reconciler: marked stranded runs as failed", "count", count)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	// Start webhook verification goroutine.
 	if appAuth != nil {
 		go verifyWebhooks(ctx, projectRepo, webhookSecretRepo, appAuth)
