@@ -90,6 +90,15 @@ func (s *Server) handleCreatePipelineRun(w http.ResponseWriter, r *http.Request)
 	run.ID = uuid.New().String()
 	if run.Status == "" {
 		run.Status = model.RunStatusPending
+	} else if run.Status != model.RunStatusPending {
+		// Reject valid-but-wrong-for-creation statuses (completed, failed, etc.)
+		// to prevent bypassing the pending → trigger → running → terminal lifecycle.
+		// Bogus strings (e.g., "bogus") fall through to service-layer validation.
+		switch run.Status {
+		case model.RunStatusRunning, model.RunStatusCompleted, model.RunStatusFailed, model.RunStatusCanceled:
+			writeJSONError(w, http.StatusBadRequest, "status must be empty or 'pending'", middleware.GetReqID(r.Context()))
+			return
+		}
 	}
 	run.StartedAt = time.Now().UTC()
 
