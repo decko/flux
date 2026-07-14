@@ -540,6 +540,22 @@ func TestCreatePipelineRun(t *testing.T) {
 		}
 	})
 
+	t.Run("completed status rejected", func(t *testing.T) {
+		body := pipelineRunRequestBody("proj-1", "ticket-1", "soda", "plan", "completed")
+		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST /api/v1/pipeline-runs: %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadRequest)
+		}
+	})
+
 	t.Run("malformed JSON", func(t *testing.T) {
 		body := `{bad json}`
 		req := authedRequest(http.MethodPost, ts.URL+"/api/v1/pipeline-runs", strings.NewReader(body))
