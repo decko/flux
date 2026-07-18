@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
 	"flag"
@@ -338,19 +339,23 @@ func run() error {
 	return nil
 }
 
-// jwtSecret returns the JWT signing key from the JWT_SECRET environment
-// variable, or a development fallback if not set.
-// It terminates the process if the secret is shorter than 16 characters,
-// as short secrets are a security risk. The dev fallback "dev-secret"
-// is intentionally short to fail closed in production; set JWT_SECRET
-// to a value of at least 16 characters.
-// Tests may set NO_AUTH=1 to bypass the check.
+// jwtSecret returns the JWT signing key. It reads JWT_SECRET from the
+// environment and enforces a minimum length of 16 characters. If JWT_SECRET
+// is not set, a cryptographically random 32-byte key is generated and a
+// warning is logged — this key will not survive restarts, so set JWT_SECRET
+// for production use. There is no hardcoded fallback and no bypass; the
+// length check is always enforced.
 func jwtSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		secret = "dev-secret"
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			log.Fatalf("failed to generate random JWT secret: %v", err)
+		}
+		slog.Warn("JWT_SECRET not set — using ephemeral random key; tokens will not survive restarts")
+		return key
 	}
-	if len(secret) < 16 && os.Getenv("NO_AUTH") != "1" {
+	if len(secret) < 16 {
 		log.Fatalf("JWT_SECRET must be at least 16 characters (got %d)", len(secret))
 	}
 	return []byte(secret)

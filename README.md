@@ -32,7 +32,9 @@ make build  # or: go build -o flux ./cmd/flux/
 ### 2. Configure
 
 ```bash
-# Required: JWT secret for auth (at least 16 characters)
+# JWT secret for auth (min 16 chars). Optional — if unset, flux generates
+# an ephemeral random key and logs a warning. Set this for production so
+# sessions survive restarts.
 export JWT_SECRET=your-secret-key-at-least-16-chars
 
 # Required for GitHub sync: create a classic token at https://github.com/settings/tokens
@@ -72,7 +74,7 @@ git clone https://github.com/decko/flux.git
 cd flux
 make build
 
-# Set JWT secret (required, min 16 chars)
+# Set JWT secret (min 16 chars; optional — set for production)
 export JWT_SECRET="your-secret-key-at-least-16-chars"
 
 # Run with defaults (in-memory SQLite, port 8080)
@@ -106,7 +108,7 @@ export FLUX_SERVER_PORT=3000
 export FLUX_DATABASE_PATH=/data/flux.db
 export FLUX_CORS_ORIGIN=https://app.example.com
 export FLUX_LOGGING_LEVEL=debug
-export JWT_SECRET=your-secret-key-here
+export JWT_SECRET=your-secret-key-here  # optional in dev
 ```
 
 Precedence: file defaults → YAML file → environment variables.
