@@ -619,6 +619,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 		api.WithAuditService(auditSvc),
 		api.WithUserService(userSvc),
 		api.WithAppAuth(appAuth),
+		api.WithWebhookCreator(domain.NewWebhookCreator(appAuth, projectRepo, webhookSecretRepo, nil)),
 		api.WithTriggerRuleRepo(triggerRuleRepo),
 		api.WithWebhookSecretRepo(webhookSecretRepo),
 
