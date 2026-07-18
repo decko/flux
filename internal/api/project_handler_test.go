@@ -8,11 +8,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
+	"github.com/decko/flux/internal/adapter/github"
 	"github.com/decko/flux/internal/domain"
 	"github.com/decko/flux/internal/migration"
 	"github.com/decko/flux/internal/model"
@@ -712,5 +714,110 @@ func TestUpdateProject_NonAdminForbidden(t *testing.T) {
 	mustDecode(t, getResp, &fetched)
 	if fetched.Name != "target-project" {
 		t.Errorf("project name was changed by non-admin: got %q, want %q", fetched.Name, "target-project")
+	}
+}
+
+// ─── Fire-and-forget context detachment ──────────────────────────────────
+
+// TestCreateProject_NonBlockingWebhook verifies that project creation returns
+// 201 without blocking on webhook registration. A WebhookCreator is injected
+// so the fire-and-forget goroutine path is actually exercised.
+func TestCreateProject_NonBlockingWebhook(t *testing.T) {
+	srv := setupProjectServer(t)
+
+	srv.webhookCreator = domain.NewWebhookCreator(nil, nil, nil, nil)
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := projectRequestBody("fire-forget", "https://github.com/example/fire-forget")
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	start := time.Now()
+	resp, err := http.DefaultClient.Do(req)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("POST /api/v1/projects: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("handler took %v, expected < 500ms", elapsed)
+	}
+}
+
+// TestDeleteProject_NonBlockingWebhook verifies that project deletion returns
+// 204 without blocking on webhook unregistration. A mock GitHub server and
+// non-zero WebhookID ensure the fire-and-forget goroutine path is entered.
+func TestDeleteProject_NonBlockingWebhook(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := repository.ConfigureSQLiteDB(db); err != nil {
+		t.Fatalf("configure sqlite: %v", err)
+	}
+	if err := migration.Up(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	sdb := sqlx.NewDb(db, "sqlite")
+	projRepo := repository.NewSQLiteProjectRepository(sdb)
+	projSvc := domain.NewProjectService(projRepo)
+
+	pemKey, _ := generateTestKeyGH(t)
+	appAuth, err := github.NewAppAuth("12345", pemKey)
+	if err != nil {
+		t.Fatalf("NewAppAuth: %v", err)
+	}
+	mockGH := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(mockGH.Close)
+	appAuth.SetHTTPClient(mockGH.Client())
+	appAuth.SetBaseURL(mockGH.URL)
+
+	srv := NewServer(
+		WithJWTSecret(testJWTSecretBytes),
+		WithProjectService(projSvc),
+		WithAppAuth(appAuth),
+	)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	createBody := projectRequestBody("to-delete", "https://github.com/example/to-delete")
+	createReq := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	var created model.Project
+	mustDecode(t, createResp, &created)
+	_ = createResp.Body.Close()
+
+	created.WebhookID = 42
+	if err := projRepo.Update(t.Context(), created); err != nil {
+		t.Fatalf("set webhook_id: %v", err)
+	}
+
+	start := time.Now()
+	delReq := authedRequest(http.MethodDelete, ts.URL+"/api/v1/projects/"+created.ID, nil)
+	delResp, err := http.DefaultClient.Do(delReq)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("DELETE /api/v1/projects: %v", err)
+	}
+	defer func() { _ = delResp.Body.Close() }()
+
+	if delResp.StatusCode != http.StatusNoContent {
+		t.Errorf("got status %d, want %d", delResp.StatusCode, http.StatusNoContent)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("handler took %v, expected < 500ms", elapsed)
 	}
 }
