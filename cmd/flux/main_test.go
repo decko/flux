@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -263,6 +264,92 @@ func TestUserAdd_InvalidRole(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid role") {
 		t.Errorf("error = %q, want substring %q", err.Error(), "invalid role")
+	}
+}
+
+// ─── jwtSecret tests ─────────────────────────────────────────────────────
+
+// TestJWTSecret_FromEnv verifies that jwtSecret() returns the value of
+// JWT_SECRET when it is set to a valid key (>=16 chars).
+func TestJWTSecret_FromEnv(t *testing.T) {
+	t.Setenv("JWT_SECRET", "my-strong-secret-key-with-32-chars!")
+	secret := jwtSecret()
+	if string(secret) != "my-strong-secret-key-with-32-chars!" {
+		t.Errorf("got %q, want %q", string(secret), "my-strong-secret-key-with-32-chars!")
+	}
+}
+
+// TestJWTSecret_NoFallback verifies that jwtSecret() never returns the
+// hardcoded "dev-secret" fallback, even when JWT_SECRET is unset.
+// The function should generate a random key and log a warning instead.
+func TestJWTSecret_NoFallback(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	secret := jwtSecret()
+	if string(secret) == "dev-secret" {
+		t.Error("jwtSecret() returned hardcoded dev-secret fallback")
+	}
+}
+
+// TestJWTSecret_MinLength verifies that jwtSecret() always returns a key
+// of at least 16 bytes.
+func TestJWTSecret_MinLength(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	secret := jwtSecret()
+	if len(secret) < 16 {
+		t.Errorf("jwtSecret() returned key of length %d, want at least 16", len(secret))
+	}
+}
+
+// TestJWTSecret_RandomWhenEmpty verifies that two calls to jwtSecret()
+// without JWT_SECRET produce different keys (a fresh random key each time).
+func TestJWTSecret_RandomWhenEmpty(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	secret1 := jwtSecret()
+	secret2 := jwtSecret()
+	if len(secret1) == 0 || len(secret2) == 0 {
+		t.Fatal("jwtSecret() returned empty key")
+	}
+	if string(secret1) == string(secret2) {
+		t.Error("jwtSecret() returned same key on two calls — should generate random key each time")
+	}
+}
+
+// TestJWTSecret_NOAUTH_NoBypass verifies that NO_AUTH=1 does NOT bypass
+// the minimum key length check. Even with NO_AUTH=1 and an empty JWT_SECRET,
+// the returned key must be at least 16 bytes.
+func TestJWTSecret_NOAUTH_NoBypass(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("NO_AUTH", "1")
+	secret := jwtSecret()
+	if len(secret) < 16 {
+		t.Errorf("jwtSecret() with NO_AUTH=1 returned key of length %d, want at least 16", len(secret))
+	}
+}
+
+// TestJWTSecret_ShortSecretFatal verifies that jwtSecret() with a JWT_SECRET
+// shorter than 16 characters causes the process to exit with a fatal error.
+// Since log.Fatalf calls os.Exit(1), we test this via a subprocess.
+func TestJWTSecret_ShortSecretFatal(t *testing.T) {
+	// This test runs itself as a subprocess to verify the fatal exit
+	// path. When JWT_SECRET_SHORT_FATAL_TEST is set, we call jwtSecret()
+	// with a short key (which should call log.Fatalf) and let the process
+	// die. The parent process checks the exit code.
+	if os.Getenv("JWT_SECRET_SHORT_FATAL_TEST") == "1" {
+		_ = os.Setenv("JWT_SECRET", "short")
+		jwtSecret()
+		os.Exit(0) // should not reach here
+	}
+
+	ctx := t.Context()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestJWTSecret_ShortSecretFatal")
+	cmd.Env = append(os.Environ(), "JWT_SECRET_SHORT_FATAL_TEST=1")
+	out, err := cmd.CombinedOutput()
+
+	if err == nil {
+		t.Error("expected non-zero exit from short JWT_SECRET, got 0")
+	}
+	if !strings.Contains(string(out), "JWT_SECRET must be at least 16 characters") {
+		t.Errorf("expected fatal message about minimum length, got: %s", string(out))
 	}
 }
 

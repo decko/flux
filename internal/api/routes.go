@@ -30,10 +30,8 @@ func (s *Server) registerRoutes() {
 		r.Group(func(r chi.Router) {
 			r.Use(AuthMiddleware(s.jwtSecret))
 
-			r.Post("/projects", s.handleCreateProject)
 			r.Get("/projects", s.handleListProjects)
 			r.Get("/projects/{id}", s.handleGetProject)
-			r.Put("/projects/{id}", s.handleUpdateProject)
 
 			r.Get("/tickets", s.handleListTickets)
 			r.Get("/tickets/{id}", s.handleGetTicket)
@@ -57,9 +55,11 @@ func (s *Server) registerRoutes() {
 			// Admin-only routes.
 			r.Group(func(r chi.Router) {
 				r.Use(RequireRole("admin"))
+				r.Post("/projects", s.handleCreateProject)
+				r.Put("/projects/{id}", s.handleUpdateProject)
+				r.Delete("/projects/{id}", s.handleDeleteProject)
 				r.Get("/audit-events", s.handleAuditEvents)
 				r.Get("/audit/integrity", s.handleAuditIntegrity)
-				r.Delete("/projects/{id}", s.handleDeleteProject)
 				r.Post("/projects/{id}/webhook/rotate-secret", s.handleRotateWebhookSecret)
 				r.Post("/projects/{id}/trigger-rules", s.handleCreateTriggerRule)
 				r.Put("/projects/{id}/trigger-rules/{ruleId}", s.handleUpdateTriggerRule)

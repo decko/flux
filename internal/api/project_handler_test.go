@@ -641,18 +641,90 @@ func TestProjectMethodNotAllowed(t *testing.T) {
 	}
 }
 
+// ─── Authz: Non-admin create/update gate ───────────────────────────────────
+
+// TestCreateProject_NonAdminForbidden verifies that a non-admin user cannot
+// create a project. The test uses a JWT with role "user" and expects 403
+// Forbidden because project creation configures outbound access with server
+// credentials and must be restricted to admins.
+func TestCreateProject_NonAdminForbidden(t *testing.T) {
+	srv := setupProjectServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := projectRequestBody("evil-project", "https://github.com/evil/repo")
+	req := nonAdminRequest(http.MethodPost, ts.URL+"/api/v1/projects", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/v1/projects (non-admin): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("non-admin POST /projects: got %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+// TestUpdateProject_NonAdminForbidden verifies that a non-admin user cannot
+// update a project. First a project is created by an admin, then a non-admin
+// JWT attempts a PUT — expect 403 Forbidden.
+func TestUpdateProject_NonAdminForbidden(t *testing.T) {
+	srv := setupProjectServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Create a project as admin.
+	createBody := projectRequestBody("target-project", "https://github.com/example/target")
+	createReq := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatalf("admin create project: %v", err)
+	}
+	var created model.Project
+	mustDecode(t, resp, &created)
+	_ = resp.Body.Close()
+
+	// Attempt update as non-admin.
+	updateBody := `{"name":"hijacked","repo_url":"https://github.com/evil/hijacked"}`
+	updateReq := nonAdminRequest(http.MethodPut, ts.URL+"/api/v1/projects/"+created.ID, updateBody)
+	updateReq.Header.Set("Content-Type", "application/json")
+
+	updateResp, err := http.DefaultClient.Do(updateReq)
+	if err != nil {
+		t.Fatalf("PUT /api/v1/projects/%s (non-admin): %v", created.ID, err)
+	}
+	defer func() { _ = updateResp.Body.Close() }()
+
+	if updateResp.StatusCode != http.StatusForbidden {
+		t.Errorf("non-admin PUT /projects/{id}: got %d, want %d", updateResp.StatusCode, http.StatusForbidden)
+	}
+
+	// Verify the project was NOT updated (name unchanged).
+	getReq := authedRequest(http.MethodGet, ts.URL+"/api/v1/projects/"+created.ID, nil)
+	getResp, err := http.DefaultClient.Do(getReq)
+	if err != nil {
+		t.Fatalf("admin get project: %v", err)
+	}
+	defer func() { _ = getResp.Body.Close() }()
+
+	var fetched model.Project
+	mustDecode(t, getResp, &fetched)
+	if fetched.Name != "target-project" {
+		t.Errorf("project name was changed by non-admin: got %q, want %q", fetched.Name, "target-project")
+	}
+}
+
+// ─── Fire-and-forget context detachment ──────────────────────────────────
+
 // TestCreateProject_NonBlockingWebhook verifies that project creation returns
 // 201 without blocking on webhook registration. A WebhookCreator is injected
-// so the fire-and-forget goroutine path is actually exercised. Using nil
-// appAuth means the goroutine runs and returns immediately (logs a warning),
-// but the detached context pattern is verified.
+// so the fire-and-forget goroutine path is actually exercised.
 func TestCreateProject_NonBlockingWebhook(t *testing.T) {
 	srv := setupProjectServer(t)
 
-	// Inject a WebhookCreator with nil appAuth — the goroutine will run,
-	// log a warning about missing GitHub config, and return immediately.
-	// This exercises the fire-and-forget goroutine without needing a real
-	// GitHub App setup.
 	srv.webhookCreator = domain.NewWebhookCreator(nil, nil, nil, nil)
 
 	ts := httptest.NewServer(srv)
@@ -682,7 +754,6 @@ func TestCreateProject_NonBlockingWebhook(t *testing.T) {
 // 204 without blocking on webhook unregistration. A mock GitHub server and
 // non-zero WebhookID ensure the fire-and-forget goroutine path is entered.
 func TestDeleteProject_NonBlockingWebhook(t *testing.T) {
-	// Build a server with both ProjectService and AppAuth.
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -698,7 +769,6 @@ func TestDeleteProject_NonBlockingWebhook(t *testing.T) {
 	projRepo := repository.NewSQLiteProjectRepository(sdb)
 	projSvc := domain.NewProjectService(projRepo)
 
-	// Mock GitHub server for webhook deletion.
 	pemKey, _ := generateTestKeyGH(t)
 	appAuth, err := github.NewAppAuth("12345", pemKey)
 	if err != nil {
@@ -719,7 +789,6 @@ func TestDeleteProject_NonBlockingWebhook(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	// Create a project with WebhookID > 0 so the goroutine path is entered.
 	createBody := projectRequestBody("to-delete", "https://github.com/example/to-delete")
 	createReq := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -731,13 +800,11 @@ func TestDeleteProject_NonBlockingWebhook(t *testing.T) {
 	mustDecode(t, createResp, &created)
 	_ = createResp.Body.Close()
 
-	// Set WebhookID to force the fire-and-forget goroutine path.
 	created.WebhookID = 42
 	if err := projRepo.Update(t.Context(), created); err != nil {
 		t.Fatalf("set webhook_id: %v", err)
 	}
 
-	// Delete — must return quickly, goroutine runs in background.
 	start := time.Now()
 	delReq := authedRequest(http.MethodDelete, ts.URL+"/api/v1/projects/"+created.ID, nil)
 	delResp, err := http.DefaultClient.Do(delReq)
