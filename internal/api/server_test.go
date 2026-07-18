@@ -42,6 +42,17 @@ func TestNewServerWithOptions(t *testing.T) {
 	}
 }
 
+// TestWithWebhookCreator verifies that WithWebhookCreator correctly sets the
+// webhookCreator field on the server. This ensures the wiring in main.go's
+// setupServer actually activates automatic webhook registration.
+func TestWithWebhookCreator(t *testing.T) {
+	creator := domain.NewWebhookCreator(nil, nil, nil, nil)
+	srv := NewServer(WithWebhookCreator(creator))
+	if srv.webhookCreator != creator {
+		t.Error("WithWebhookCreator did not set webhookCreator on server")
+	}
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	srv := NewServer()
 	ts := httptest.NewServer(srv)
