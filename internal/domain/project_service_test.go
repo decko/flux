@@ -440,6 +440,13 @@ func (r *mockSecretRepo) Set(_ context.Context, repoURL, secret string) error {
 	return nil
 }
 
+func (r *mockSecretRepo) Delete(_ context.Context, repoURL string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.secrets, repoURL)
+	return nil
+}
+
 // mockWebhookUpdater is a test implementation of webhookUpdater that records
 // calls and can be configured to return errors.
 type mockWebhookUpdater struct {
