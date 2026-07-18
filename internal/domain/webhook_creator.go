@@ -24,6 +24,7 @@ type webhookProjectRepo interface {
 // WebhookCreator.
 type webhookSecretRepo interface {
 	Set(ctx context.Context, repoURL, secret string) error
+	Delete(ctx context.Context, repoURL string) error
 }
 
 // WebhookCreator handles automatic GitHub webhook registration for projects.
@@ -149,16 +150,23 @@ func (c *WebhookCreator) CreateForProject(ctx context.Context, project model.Pro
 
 	// Store the secret.
 	if err := c.secretRepo.Set(ctx, project.RepoURL, secret); err != nil {
-		slog.Warn("webhook creator: failed to store webhook secret",
-			"project_id", project.ID, "error", err)
+		slog.Warn("webhook creator: failed to store webhook secret; rolling back GitHub webhook",
+			"project_id", project.ID, "webhook_id", webhookID, "error", err)
+		// Best-effort rollback: delete the webhook from GitHub.
+		owner, repo := getOwnerAndRepo(project)
+		_ = github.DeleteWebhook(ctx, c.appAuth, project.InstallationID, owner, repo, webhookID)
 		return
 	}
 
 	// Update the project with the webhook ID.
 	project.WebhookID = webhookID
 	if err := c.projectRepo.Update(ctx, project); err != nil {
-		slog.Warn("webhook creator: failed to update project with webhook ID",
-			"project_id", project.ID, "error", err)
+		slog.Warn("webhook creator: failed to update project with webhook ID; rolling back",
+			"project_id", project.ID, "webhook_id", webhookID, "error", err)
+		// Best-effort rollback: delete the secret and the webhook.
+		_ = c.secretRepo.Delete(ctx, project.RepoURL)
+		owner, repo := getOwnerAndRepo(project)
+		_ = github.DeleteWebhook(ctx, c.appAuth, project.InstallationID, owner, repo, webhookID)
 		return
 	}
 
