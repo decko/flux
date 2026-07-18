@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -322,6 +323,33 @@ func TestJWTSecret_NOAUTH_NoBypass(t *testing.T) {
 	secret := jwtSecret()
 	if len(secret) < 16 {
 		t.Errorf("jwtSecret() with NO_AUTH=1 returned key of length %d, want at least 16", len(secret))
+	}
+}
+
+// TestJWTSecret_ShortSecretFatal verifies that jwtSecret() with a JWT_SECRET
+// shorter than 16 characters causes the process to exit with a fatal error.
+// Since log.Fatalf calls os.Exit(1), we test this via a subprocess.
+func TestJWTSecret_ShortSecretFatal(t *testing.T) {
+	// This test runs itself as a subprocess to verify the fatal exit
+	// path. When JWT_SECRET_SHORT_FATAL_TEST is set, we call jwtSecret()
+	// with a short key (which should call log.Fatalf) and let the process
+	// die. The parent process checks the exit code.
+	if os.Getenv("JWT_SECRET_SHORT_FATAL_TEST") == "1" {
+		_ = os.Setenv("JWT_SECRET", "short")
+		jwtSecret()
+		os.Exit(0) // should not reach here
+	}
+
+	ctx := t.Context()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestJWTSecret_ShortSecretFatal")
+	cmd.Env = append(os.Environ(), "JWT_SECRET_SHORT_FATAL_TEST=1")
+	out, err := cmd.CombinedOutput()
+
+	if err == nil {
+		t.Error("expected non-zero exit from short JWT_SECRET, got 0")
+	}
+	if !strings.Contains(string(out), "JWT_SECRET must be at least 16 characters") {
+		t.Errorf("expected fatal message about minimum length, got: %s", string(out))
 	}
 }
 
