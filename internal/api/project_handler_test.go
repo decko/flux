@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -636,5 +637,75 @@ func TestProjectMethodNotAllowed(t *testing.T) {
 				t.Error("JSON response missing 'error' field")
 			}
 		})
+	}
+}
+
+// TestCreateProject_NonBlockingWebhook verifies that project creation returns
+// 201 quickly without blocking on webhook registration. The fire-and-forget
+// goroutine uses a detached context so the response is immediate regardless
+// of webhook creation latency.
+func TestCreateProject_NonBlockingWebhook(t *testing.T) {
+	srv := setupProjectServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	body := projectRequestBody("fast-create", "https://github.com/example/fast")
+	req := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	start := time.Now()
+	resp, err := http.DefaultClient.Do(req)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("POST /api/v1/projects: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+
+	// Response must be quick — must not block waiting for external services.
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("handler took %v, expected < 500ms", elapsed)
+	}
+}
+
+// TestDeleteProject_NonBlockingWebhook verifies that project deletion returns
+// 204 quickly without blocking on webhook unregistration. The fire-and-forget
+// goroutine uses a detached context.
+func TestDeleteProject_NonBlockingWebhook(t *testing.T) {
+	srv := setupProjectServer(t)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Create a project first.
+	createBody := projectRequestBody("to-delete", "https://github.com/example/to-delete")
+	createReq := authedRequest(http.MethodPost, ts.URL+"/api/v1/projects", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createResp, err := http.DefaultClient.Do(createReq)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	var created model.Project
+	mustDecode(t, createResp, &created)
+	_ = createResp.Body.Close()
+
+	// Delete the project — should be quick.
+	start := time.Now()
+	delReq := authedRequest(http.MethodDelete, ts.URL+"/api/v1/projects/"+created.ID, nil)
+	delResp, err := http.DefaultClient.Do(delReq)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("DELETE /api/v1/projects: %v", err)
+	}
+	defer func() { _ = delResp.Body.Close() }()
+
+	if delResp.StatusCode != http.StatusNoContent {
+		t.Errorf("got status %d, want %d", delResp.StatusCode, http.StatusNoContent)
+	}
+
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("handler took %v, expected < 500ms", elapsed)
 	}
 }

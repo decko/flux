@@ -42,8 +42,13 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fire-and-forget webhook registration — don't block the response.
+	// Use a detached context so the request context is not canceled.
 	if s.webhookCreator != nil {
-		go s.webhookCreator.CreateForProject(r.Context(), p)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			s.webhookCreator.CreateForProject(ctx, p)
+		}()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -152,8 +157,13 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fire-and-forget: delete the GitHub webhook if one exists.
+	// Use a detached context so the request context is not canceled
+	// after the response is sent.
 	if project.WebhookID > 0 && s.appAuth != nil {
-		go func(ctx context.Context, p model.Project) {
+		go func(p model.Project) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
 			// Derive owner/repo from adapter config.
 			owner, repo := "", ""
 			for _, a := range p.Adapters {
@@ -183,7 +193,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 						"project_id", p.ID, "error", err)
 				}
 			}
-		}(r.Context(), project)
+		}(project)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
