@@ -45,6 +45,12 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	// Use a detached context so the request context is not canceled.
 	if s.webhookCreator != nil {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("webhook registration panicked",
+						"project_id", p.ID, "panic", r)
+				}
+			}()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			s.webhookCreator.CreateForProject(ctx, p)
@@ -161,6 +167,12 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	// after the response is sent.
 	if project.WebhookID > 0 && s.appAuth != nil {
 		go func(p model.Project) {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("webhook deletion panicked",
+						"project_id", p.ID, "webhook_id", p.WebhookID, "panic", r)
+				}
+			}()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
