@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
@@ -323,5 +324,81 @@ func TestHandleGitHubInstallationRepos_APIError(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusBadGateway)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Role-based access control — non-admin users must be rejected
+// ---------------------------------------------------------------------------
+
+func TestHandleGitHubInstallations_NonAdminForbidden(t *testing.T) {
+	mockGH, srv := setupGitHubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("handler should not be reached for non-admin user")
+		w.WriteHeader(http.StatusOK)
+	})
+	defer mockGH.Close()
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	nonAdminToken := generateNonAdminToken()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/github/installations", nil)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+nonAdminToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/github/installations (non-admin): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+
+	var errResp map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if _, ok := errResp["error"]; !ok {
+		t.Error("error response missing 'error' field")
+	}
+}
+
+func TestHandleGitHubInstallationRepos_NonAdminForbidden(t *testing.T) {
+	mockGH, srv := setupGitHubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("handler should not be reached for non-admin user")
+		w.WriteHeader(http.StatusOK)
+	})
+	defer mockGH.Close()
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	nonAdminToken := generateNonAdminToken()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/api/v1/github/installations/42/repositories", nil)
+	if err != nil {
+		t.Fatalf("creating request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+nonAdminToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/github/installations/42/repositories (non-admin): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+
+	var errResp map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if _, ok := errResp["error"]; !ok {
+		t.Error("error response missing 'error' field")
 	}
 }

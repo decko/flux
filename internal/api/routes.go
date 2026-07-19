@@ -49,12 +49,12 @@ func (s *Server) registerRoutes() {
 			r.Get("/adapters", s.handleListAdapters)
 			r.Get("/adapters/{type}/health", s.handleAdapterHealth)
 			r.Get("/projects/{id}/trigger-rules", s.handleListTriggerRules)
-			r.Get("/github/installations", s.handleGitHubInstallations)
-			r.Get("/github/installations/{id}/repositories", s.handleGitHubInstallationRepositories)
 
 			// Admin-only routes.
 			r.Group(func(r chi.Router) {
 				r.Use(RequireRole("admin"))
+				r.Get("/github/installations", s.handleGitHubInstallations)
+				r.Get("/github/installations/{id}/repositories", s.handleGitHubInstallationRepositories)
 				r.Post("/projects", s.handleCreateProject)
 				r.Put("/projects/{id}", s.handleUpdateProject)
 				r.Delete("/projects/{id}", s.handleDeleteProject)
