@@ -16,6 +16,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history required by gitleaks-action to diff PR changes
+          # against the base branch. Shallow clones fail with
+          # "ambiguous argument '<sha>^..<sha>': unknown revision".
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
