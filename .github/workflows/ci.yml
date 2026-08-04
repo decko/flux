@@ -27,6 +27,11 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -35,6 +40,19 @@ jobs:
             ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('web/bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Build frontend (for //go:embed dist)
+        run: |
+          bun install
+          bun run build
+        working-directory: web
 
       - name: Install dependencies
         run: go mod download
