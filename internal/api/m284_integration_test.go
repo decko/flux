@@ -223,6 +223,22 @@ func TestM284_SyncStatusPersistsAcrossRestart(t *testing.T) {
 	if p2.PRsSynced != 1 {
 		t.Errorf("post-restart API: got PRsSynced %d, want 1", p2.PRsSynced)
 	}
+	// Top-level aggregates must be recomputed from the persisted rows.
+	if status3.TicketsSynced != 1 {
+		t.Errorf("post-restart aggregate: got TicketsSynced %d, want 1", status3.TicketsSynced)
+	}
+	if status3.PRsSynced != 1 {
+		t.Errorf("post-restart aggregate: got PRsSynced %d, want 1", status3.PRsSynced)
+	}
+	if status3.LastSyncAt == nil {
+		t.Error("post-restart aggregate: expected non-nil last_sync_at")
+	}
+	if !status3.WebhooksHealthy {
+		t.Error("post-restart aggregate: expected webhooks_healthy true")
+	}
+	if status3.LastSyncError != "" {
+		t.Errorf("post-restart aggregate: got last_sync_error %q, want ''", status3.LastSyncError)
+	}
 }
 
 // getSyncStatus performs an authenticated GET against /api/v1/sync/status and

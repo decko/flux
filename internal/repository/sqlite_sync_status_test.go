@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	_ "modernc.org/sqlite"
 
@@ -57,10 +56,9 @@ func seedProjectForSyncStatus(t *testing.T, sdb *sqlx.DB, projectID string) {
 
 // testSyncStatusRow builds a SyncStatusRow with deterministic values for a
 // given project.
-func testSyncStatusRow(id, projectID string, ticketsSynced int) model.SyncStatusRow {
+func testSyncStatusRow(projectID string, ticketsSynced int) model.SyncStatusRow {
 	now := time.Now().UTC().Truncate(time.Second)
 	return model.SyncStatusRow{
-		ID:              id,
 		ProjectID:       projectID,
 		LastSyncAt:      &now,
 		LastSyncError:   "",
@@ -76,7 +74,7 @@ func TestUpsert_NewStatus(t *testing.T) {
 	seedProjectForSyncStatus(t, sdb, "proj-1")
 	ctx := context.Background()
 
-	want := testSyncStatusRow(uuid.New().String(), "proj-1", 3)
+	want := testSyncStatusRow("proj-1", 3)
 	if err := repo.Upsert(ctx, want); err != nil {
 		t.Fatalf("Upsert returned error: %v", err)
 	}
@@ -84,9 +82,6 @@ func TestUpsert_NewStatus(t *testing.T) {
 	got, err := repo.GetByProjectID(ctx, "proj-1")
 	if err != nil {
 		t.Fatalf("GetByProjectID returned error: %v", err)
-	}
-	if got.ID != want.ID {
-		t.Errorf("got ID %q, want %q", got.ID, want.ID)
 	}
 	if got.ProjectID != "proj-1" {
 		t.Errorf("got ProjectID %q, want %q", got.ProjectID, "proj-1")
@@ -119,12 +114,12 @@ func TestUpsert_ExistingStatus(t *testing.T) {
 	seedProjectForSyncStatus(t, sdb, "proj-1")
 	ctx := context.Background()
 
-	first := testSyncStatusRow(uuid.New().String(), "proj-1", 1)
+	first := testSyncStatusRow("proj-1", 1)
 	if err := repo.Upsert(ctx, first); err != nil {
 		t.Fatalf("first Upsert returned error: %v", err)
 	}
 
-	second := testSyncStatusRow(uuid.New().String(), "proj-1", 7)
+	second := testSyncStatusRow("proj-1", 7)
 	second.LastSyncError = "ticket API error"
 	second.WebhooksHealthy = false
 	if err := repo.Upsert(ctx, second); err != nil {
@@ -189,7 +184,7 @@ func TestList_MultipleProjects(t *testing.T) {
 	ctx := context.Background()
 
 	for _, pid := range []string{"proj-1", "proj-2", "proj-3"} {
-		if err := repo.Upsert(ctx, testSyncStatusRow(uuid.New().String(), pid, 1)); err != nil {
+		if err := repo.Upsert(ctx, testSyncStatusRow(pid, 1)); err != nil {
 			t.Fatalf("Upsert %s: %v", pid, err)
 		}
 	}
@@ -235,7 +230,7 @@ func TestCascadeDelete(t *testing.T) {
 		t.Fatalf("create project: %v", err)
 	}
 
-	if err := repo.Upsert(ctx, testSyncStatusRow(uuid.New().String(), "proj-1", 2)); err != nil {
+	if err := repo.Upsert(ctx, testSyncStatusRow("proj-1", 2)); err != nil {
 		t.Fatalf("Upsert returned error: %v", err)
 	}
 
@@ -267,7 +262,7 @@ func TestConcurrentUpsert(t *testing.T) {
 		i := i
 		go func() {
 			defer wg.Done()
-			row := testSyncStatusRow(uuid.New().String(), "proj-1", i)
+			row := testSyncStatusRow("proj-1", i)
 			_ = repo.Upsert(ctx, row)
 		}()
 	}

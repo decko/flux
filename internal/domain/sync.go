@@ -139,12 +139,23 @@ func (s *SyncService) WithSyncStatusRepository(repo repository.SyncStatusReposit
 	s.syncStatusRepo = repo
 }
 
+// LoadPersistedStatus eagerly loads persisted per-project sync status into
+// memory. It is idempotent: subsequent calls (including the lazy load on the
+// first Status() call) are no-ops. When no repository is configured it does
+// nothing. Run() calls this before the first sync pass so the initial sync
+// does not race the lazy load; callers that never use Run can rely on the
+// lazy load in Status() instead.
+func (s *SyncService) LoadPersistedStatus() {
+	s.statusLoaded.Do(s.loadPersistedStatus)
+}
+
 // Status returns the result of the last sync operation. It is safe
 // for concurrent use. On the first call, persisted per-project sync
 // status is loaded from the SyncStatusRepository (if configured) so
-// status survives process restarts.
+// status survives process restarts. Run() loads eagerly before the
+// first sync; this lazy load is an idempotent safety net.
 func (s *SyncService) Status() SyncStatus {
-	s.statusLoaded.Do(s.loadPersistedStatus)
+	s.LoadPersistedStatus()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.status
@@ -152,7 +163,9 @@ func (s *SyncService) Status() SyncStatus {
 
 // loadPersistedStatus populates in-memory per-project status from the
 // SyncStatusRepository. It runs exactly once per service lifetime via
-// statusLoaded; when no repository is configured it is a no-op. Load
+// statusLoaded; when no repository is configured it is a no-op. Projects
+// already present in memory (e.g. written by an earlier sync pass) are kept
+// as-is so fresher in-memory data is never clobbered by stale DB rows. Load
 // failures are logged and the service continues with in-memory-only status.
 func (s *SyncService) loadPersistedStatus() {
 	if s.syncStatusRepo == nil {
@@ -166,6 +179,11 @@ func (s *SyncService) loadPersistedStatus() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, row := range rows {
+		if _, ok := s.status.Projects[row.ProjectID]; ok {
+			// A sync pass already wrote fresher in-memory status for this
+			// project; do not overwrite it with the stale DB snapshot.
+			continue
+		}
 		ps := ProjectSyncStatus{
 			ProjectID:       row.ProjectID,
 			LastSyncAt:      row.LastSyncAt,
@@ -176,17 +194,19 @@ func (s *SyncService) loadPersistedStatus() {
 		}
 		s.status.Projects[row.ProjectID] = ps
 	}
+	// Derive top-level aggregates so the dashboard shows correct values
+	// immediately after a restart, before the first sync pass.
+	s.recomputeAggregates()
 }
 
 // persistSyncStatus writes the given per-project status to the
 // SyncStatusRepository when one is configured. Persistence failures are
-// logged but do not fail the sync.
+// logged but do not fail the sync. It is safe to call without holding s.mu.
 func (s *SyncService) persistSyncStatus(ctx context.Context, projectID string, ps ProjectSyncStatus, now time.Time) {
 	if s.syncStatusRepo == nil {
 		return
 	}
 	row := model.SyncStatusRow{
-		ID:              projectID,
 		ProjectID:       projectID,
 		LastSyncAt:      ps.LastSyncAt,
 		LastSyncError:   ps.LastSyncError,
@@ -200,6 +220,36 @@ func (s *SyncService) persistSyncStatus(ctx context.Context, projectID string, p
 			"project_id", projectID,
 			"err", err,
 		)
+	}
+}
+
+// recomputeAggregates derives top-level status fields from per-project
+// status. Callers must hold s.mu.
+func (s *SyncService) recomputeAggregates() {
+	var totalTickets, totalPRs int
+	var firstErr string
+	var latestSync *time.Time
+	allWebhooksHealthy := true
+	for _, ps := range s.status.Projects {
+		totalTickets += ps.TicketsSynced
+		totalPRs += ps.PRsSynced
+		if ps.LastSyncError != "" && firstErr == "" {
+			firstErr = ps.LastSyncError
+		}
+		if ps.LastSyncAt != nil && (latestSync == nil || ps.LastSyncAt.After(*latestSync)) {
+			t := *ps.LastSyncAt
+			latestSync = &t
+		}
+		if !ps.WebhooksHealthy {
+			allWebhooksHealthy = false
+		}
+	}
+	s.status.TicketsSynced = totalTickets
+	s.status.PRsSynced = totalPRs
+	s.status.LastSyncError = firstErr
+	s.status.WebhooksHealthy = allWebhooksHealthy
+	if latestSync != nil {
+		s.status.LastSyncAt = latestSync
 	}
 }
 
@@ -232,6 +282,10 @@ func (s *SyncService) Run(ctx context.Context) {
 		s.done = nil
 		s.mu.Unlock()
 	}()
+
+	// Load persisted per-project sync status before the first sync pass so
+	// the initial SyncNow does not race the lazy load triggered by Status().
+	s.LoadPersistedStatus()
 
 	// Immediate first sync of all projects.
 	_ = s.SyncNow(ctx)
@@ -298,31 +352,7 @@ func (s *SyncService) SyncNow(ctx context.Context) error {
 	}
 	// Recompute aggregate status from per-project statuses.
 	s.mu.Lock()
-	var totalTickets, totalPRs int
-	var firstErr string
-	var latestSync *time.Time
-	allWebhooksHealthy := true
-	for _, ps := range s.status.Projects {
-		totalTickets += ps.TicketsSynced
-		totalPRs += ps.PRsSynced
-		if ps.LastSyncError != "" && firstErr == "" {
-			firstErr = ps.LastSyncError
-		}
-		if ps.LastSyncAt != nil && (latestSync == nil || ps.LastSyncAt.After(*latestSync)) {
-			t := *ps.LastSyncAt
-			latestSync = &t
-		}
-		if !ps.WebhooksHealthy {
-			allWebhooksHealthy = false
-		}
-	}
-	s.status.TicketsSynced = totalTickets
-	s.status.PRsSynced = totalPRs
-	s.status.LastSyncError = firstErr
-	s.status.WebhooksHealthy = allWebhooksHealthy
-	if latestSync != nil {
-		s.status.LastSyncAt = latestSync
-	}
+	s.recomputeAggregates()
 	s.mu.Unlock()
 	return nil
 }
@@ -359,12 +389,13 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 			LastSyncError: err.Error(),
 		}
 		s.status.Projects[projectID] = ps
-		s.persistSyncStatus(ctx, projectID, ps, now)
 		s.status.LastSyncAt = &now
 		s.status.LastSyncError = err.Error()
 		s.status.TicketsSynced = 0
 		s.status.PRsSynced = 0
 		s.mu.Unlock()
+		// Persist outside the lock; failures are logged, never fatal.
+		s.persistSyncStatus(ctx, projectID, ps, now)
 		return nil
 	}
 
@@ -500,7 +531,6 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 		ps.LastSyncError = lastErr.Error()
 	}
 	s.status.Projects[projectID] = ps
-	s.persistSyncStatus(ctx, projectID, ps, now)
 	s.status.LastSyncAt = &now
 	if lastErr != nil {
 		s.status.LastSyncError = lastErr.Error()
@@ -513,6 +543,9 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 	s.status.TicketsSynced = len(ticketTotal)
 	s.status.PRsSynced = len(prTotal)
 	s.mu.Unlock()
+
+	// Persist outside the lock; failures are logged, never fatal.
+	s.persistSyncStatus(ctx, projectID, ps, now)
 
 	s.logger.Info("sync complete",
 		"project_id", projectID,

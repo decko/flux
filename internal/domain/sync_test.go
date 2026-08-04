@@ -1591,12 +1591,12 @@ func TestSyncService_PersistsStatusOnSync(t *testing.T) {
 }
 
 // TestSyncService_LoadsStatusOnStartup verifies that the first Status() call
-// lazily loads previously persisted per-project status into memory.
+// lazily loads previously persisted per-project status into memory and that
+// top-level aggregates are recomputed from the loaded rows.
 func TestSyncService_LoadsStatusOnStartup(t *testing.T) {
 	statusRepo := newMockSyncStatusRepo()
 	now := time.Now().UTC().Truncate(time.Second)
 	err := statusRepo.Upsert(context.Background(), model.SyncStatusRow{
-		ID:              "1",
 		ProjectID:       "proj-1",
 		LastSyncAt:      &now,
 		LastSyncError:   "",
@@ -1607,7 +1607,6 @@ func TestSyncService_LoadsStatusOnStartup(t *testing.T) {
 	})
 	must(t, err)
 	err = statusRepo.Upsert(context.Background(), model.SyncStatusRow{
-		ID:              "2",
 		ProjectID:       "proj-2",
 		LastSyncAt:      &now,
 		LastSyncError:   "ticket API error",
@@ -1628,6 +1627,23 @@ func TestSyncService_LoadsStatusOnStartup(t *testing.T) {
 	status := svc.Status()
 	if len(status.Projects) != 2 {
 		t.Fatalf("expected 2 projects loaded from repo, got %d", len(status.Projects))
+	}
+
+	// Aggregates must be recomputed from the loaded per-project rows.
+	if status.TicketsSynced != 2 {
+		t.Errorf("aggregate TicketsSynced: got %d, want 2", status.TicketsSynced)
+	}
+	if status.PRsSynced != 1 {
+		t.Errorf("aggregate PRsSynced: got %d, want 1", status.PRsSynced)
+	}
+	if status.LastSyncError != "ticket API error" {
+		t.Errorf("aggregate LastSyncError: got %q, want %q", status.LastSyncError, "ticket API error")
+	}
+	if status.WebhooksHealthy {
+		t.Error("aggregate WebhooksHealthy: got true, want false (proj-2 unhealthy)")
+	}
+	if status.LastSyncAt == nil {
+		t.Error("aggregate LastSyncAt: expected non-nil after loading rows")
 	}
 
 	ps1, ok := status.Projects["proj-1"]

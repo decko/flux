@@ -8,7 +8,6 @@ import "time"
 // one row, keyed by ProjectID; rows are removed when the owning project is
 // deleted (ON DELETE CASCADE).
 type SyncStatusRow struct {
-	ID              string
 	ProjectID       string
 	LastSyncAt      *time.Time
 	LastSyncError   string

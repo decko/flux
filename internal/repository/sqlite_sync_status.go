@@ -29,8 +29,10 @@ func NewSQLiteSyncStatusRepository(db *sqlx.DB) *SQLiteSyncStatusRepository {
 }
 
 // Upsert persists the sync status for a project, creating the row if it does
-// not exist and overwriting it otherwise. All time.Time values are normalized
-// to UTC before storage and WebhooksHealthy is stored as INTEGER (0/1).
+// not exist and overwriting it otherwise. The project_id primary key is
+// preserved across updates (ON CONFLICT DO UPDATE). All time.Time values are
+// normalized to UTC before storage and WebhooksHealthy is stored as INTEGER
+// (0/1).
 func (r *SQLiteSyncStatusRepository) Upsert(ctx context.Context, status model.SyncStatusRow) error {
 	webhooksHealthy := 0
 	if status.WebhooksHealthy {
@@ -41,9 +43,15 @@ func (r *SQLiteSyncStatusRepository) Upsert(ctx context.Context, status model.Sy
 		lastSyncAt = status.LastSyncAt.UTC()
 	}
 
-	query := `INSERT OR REPLACE INTO sync_status (id, project_id, last_sync_at, last_sync_error, tickets_synced, prs_synced, webhooks_healthy, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO sync_status (project_id, last_sync_at, last_sync_error, tickets_synced, prs_synced, webhooks_healthy, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(project_id) DO UPDATE SET
+	last_sync_at = excluded.last_sync_at,
+	last_sync_error = excluded.last_sync_error,
+	tickets_synced = excluded.tickets_synced,
+	prs_synced = excluded.prs_synced,
+	webhooks_healthy = excluded.webhooks_healthy,
+	updated_at = excluded.updated_at`
 	_, err := r.db.ExecContext(ctx, query,
-		status.ID,
 		status.ProjectID,
 		lastSyncAt,
 		status.LastSyncError,
@@ -61,12 +69,11 @@ func (r *SQLiteSyncStatusRepository) Upsert(ctx context.Context, status model.Sy
 // GetByProjectID retrieves the sync status for a single project. Returns
 // ErrNotFound if no row exists for the project.
 func (r *SQLiteSyncStatusRepository) GetByProjectID(ctx context.Context, projectID string) (model.SyncStatusRow, error) {
-	query := `SELECT id, project_id, last_sync_at, last_sync_error, tickets_synced, prs_synced, webhooks_healthy, updated_at FROM sync_status WHERE project_id = ?`
+	query := `SELECT project_id, last_sync_at, last_sync_error, tickets_synced, prs_synced, webhooks_healthy, updated_at FROM sync_status WHERE project_id = ?`
 	var row model.SyncStatusRow
 	var lastSyncAt sql.NullTime
 	var webhooksHealthy int
 	err := r.db.QueryRowContext(ctx, query, projectID).Scan(
-		&row.ID,
 		&row.ProjectID,
 		&lastSyncAt,
 		&row.LastSyncError,
@@ -91,7 +98,7 @@ func (r *SQLiteSyncStatusRepository) GetByProjectID(ctx context.Context, project
 // List returns all persisted sync status rows. Returns an empty non-nil slice
 // when no rows exist.
 func (r *SQLiteSyncStatusRepository) List(ctx context.Context) ([]model.SyncStatusRow, error) {
-	query := `SELECT id, project_id, last_sync_at, last_sync_error, tickets_synced, prs_synced, webhooks_healthy, updated_at FROM sync_status`
+	query := `SELECT project_id, last_sync_at, last_sync_error, tickets_synced, prs_synced, webhooks_healthy, updated_at FROM sync_status`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("listing sync status rows: %w", err)
@@ -104,7 +111,6 @@ func (r *SQLiteSyncStatusRepository) List(ctx context.Context) ([]model.SyncStat
 		var lastSyncAt sql.NullTime
 		var webhooksHealthy int
 		if err := rows.Scan(
-			&row.ID,
 			&row.ProjectID,
 			&lastSyncAt,
 			&row.LastSyncError,
