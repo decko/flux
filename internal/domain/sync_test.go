@@ -1476,3 +1476,279 @@ func TestSyncService_AuditEvent_MultipleTicketsAndPRs(t *testing.T) {
 		t.Errorf("got %d pull_request.created.sync events, want 1", prCreates)
 	}
 }
+
+// ─── Mock: SyncStatusRepository ────────────────────────────────────────────
+
+// mockSyncStatusRepo is an in-memory SyncStatusRepository that records every
+// Upsert call so tests can assert what was persisted.
+type mockSyncStatusRepo struct {
+	mu      sync.Mutex
+	store   map[string]model.SyncStatusRow
+	upserts []model.SyncStatusRow
+}
+
+func newMockSyncStatusRepo() *mockSyncStatusRepo {
+	return &mockSyncStatusRepo{store: make(map[string]model.SyncStatusRow)}
+}
+
+func (r *mockSyncStatusRepo) Upsert(_ context.Context, status model.SyncStatusRow) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.store[status.ProjectID] = status
+	r.upserts = append(r.upserts, status)
+	return nil
+}
+
+func (r *mockSyncStatusRepo) GetByProjectID(_ context.Context, projectID string) (model.SyncStatusRow, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	status, exists := r.store[projectID]
+	if !exists {
+		return model.SyncStatusRow{}, repository.ErrNotFound
+	}
+	return status, nil
+}
+
+func (r *mockSyncStatusRepo) List(_ context.Context) ([]model.SyncStatusRow, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := make([]model.SyncStatusRow, 0, len(r.store))
+	for _, status := range r.store {
+		result = append(result, status)
+	}
+	return result, nil
+}
+
+// upsertCount returns how many times Upsert has been called.
+func (r *mockSyncStatusRepo) upsertCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.upserts)
+}
+
+// lastUpsert returns the most recent Upsert call, or the zero value if none.
+func (r *mockSyncStatusRepo) lastUpsert() model.SyncStatusRow {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.upserts) == 0 {
+		return model.SyncStatusRow{}
+	}
+	return r.upserts[len(r.upserts)-1]
+}
+
+// ─── Tests: Sync Status Persistence (#284) ─────────────────────────────────
+
+// TestSyncService_PersistsStatusOnSync verifies that after a successful sync
+// the per-project status is written to the SyncStatusRepository.
+func TestSyncService_PersistsStatusOnSync(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
+	ticketAdapter := &stubTicketAdapter{
+		name: "test-ticket",
+		tickets: []model.Ticket{
+			sampleTicket("proj-1", "ext-1"),
+		},
+	}
+	scmAdapter := &stubSCMAdapter{name: "test-scm"}
+	statusRepo := newMockSyncStatusRepo()
+
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return ticketAdapter, scmAdapter, nil
+		}, 5*time.Minute)
+	svc.WithSyncStatusRepository(statusRepo)
+
+	ctx := context.Background()
+	if err := svc.SyncNow(ctx); err != nil {
+		t.Fatalf("SyncNow: %v", err)
+	}
+
+	if statusRepo.upsertCount() != 1 {
+		t.Fatalf("expected 1 Upsert call, got %d", statusRepo.upsertCount())
+	}
+	persisted := statusRepo.lastUpsert()
+	if persisted.ProjectID != "proj-1" {
+		t.Errorf("got ProjectID %q, want %q", persisted.ProjectID, "proj-1")
+	}
+	if persisted.TicketsSynced != 1 {
+		t.Errorf("got TicketsSynced %d, want 1", persisted.TicketsSynced)
+	}
+	if persisted.PRsSynced != 0 {
+		t.Errorf("got PRsSynced %d, want 0", persisted.PRsSynced)
+	}
+	if persisted.LastSyncAt == nil {
+		t.Error("expected non-nil LastSyncAt in persisted status")
+	}
+	if persisted.LastSyncError != "" {
+		t.Errorf("got LastSyncError %q, want ''", persisted.LastSyncError)
+	}
+	if !persisted.WebhooksHealthy {
+		t.Error("expected WebhooksHealthy true in persisted status")
+	}
+}
+
+// TestSyncService_LoadsStatusOnStartup verifies that the first Status() call
+// lazily loads previously persisted per-project status into memory and that
+// top-level aggregates are recomputed from the loaded rows.
+func TestSyncService_LoadsStatusOnStartup(t *testing.T) {
+	statusRepo := newMockSyncStatusRepo()
+	now := time.Now().UTC().Truncate(time.Second)
+	err := statusRepo.Upsert(context.Background(), model.SyncStatusRow{
+		ProjectID:       "proj-1",
+		LastSyncAt:      &now,
+		LastSyncError:   "",
+		TicketsSynced:   2,
+		PRsSynced:       1,
+		WebhooksHealthy: true,
+		UpdatedAt:       now,
+	})
+	must(t, err)
+	err = statusRepo.Upsert(context.Background(), model.SyncStatusRow{
+		ProjectID:       "proj-2",
+		LastSyncAt:      &now,
+		LastSyncError:   "ticket API error",
+		TicketsSynced:   0,
+		PRsSynced:       0,
+		WebhooksHealthy: false,
+		UpdatedAt:       now,
+	})
+	must(t, err)
+
+	svc := NewSyncService(newMockTicketRepo(), newMockPRRepo(), newMockProjectRepo(),
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return &stubTicketAdapter{name: "test-ticket"}, &stubSCMAdapter{name: "test-scm"}, nil
+		}, 5*time.Minute)
+	svc.WithSyncStatusRepository(statusRepo)
+
+	// First Status() call must load persisted rows into Projects.
+	status := svc.Status()
+	if len(status.Projects) != 2 {
+		t.Fatalf("expected 2 projects loaded from repo, got %d", len(status.Projects))
+	}
+
+	// Aggregates must be recomputed from the loaded per-project rows.
+	if status.TicketsSynced != 2 {
+		t.Errorf("aggregate TicketsSynced: got %d, want 2", status.TicketsSynced)
+	}
+	if status.PRsSynced != 1 {
+		t.Errorf("aggregate PRsSynced: got %d, want 1", status.PRsSynced)
+	}
+	if status.LastSyncError != "ticket API error" {
+		t.Errorf("aggregate LastSyncError: got %q, want %q", status.LastSyncError, "ticket API error")
+	}
+	if status.WebhooksHealthy {
+		t.Error("aggregate WebhooksHealthy: got true, want false (proj-2 unhealthy)")
+	}
+	if status.LastSyncAt == nil {
+		t.Error("aggregate LastSyncAt: expected non-nil after loading rows")
+	}
+
+	ps1, ok := status.Projects["proj-1"]
+	if !ok {
+		t.Fatal("expected proj-1 in loaded status")
+	}
+	if ps1.TicketsSynced != 2 {
+		t.Errorf("proj-1 TicketsSynced: got %d, want 2", ps1.TicketsSynced)
+	}
+	if ps1.PRsSynced != 1 {
+		t.Errorf("proj-1 PRsSynced: got %d, want 1", ps1.PRsSynced)
+	}
+	if ps1.LastSyncError != "" {
+		t.Errorf("proj-1 LastSyncError: got %q, want ''", ps1.LastSyncError)
+	}
+	if !ps1.WebhooksHealthy {
+		t.Error("proj-1: expected WebhooksHealthy true")
+	}
+	if ps1.LastSyncAt == nil {
+		t.Error("proj-1: expected non-nil LastSyncAt")
+	}
+
+	ps2, ok := status.Projects["proj-2"]
+	if !ok {
+		t.Fatal("expected proj-2 in loaded status")
+	}
+	if ps2.LastSyncError != "ticket API error" {
+		t.Errorf("proj-2 LastSyncError: got %q, want %q", ps2.LastSyncError, "ticket API error")
+	}
+	if ps2.WebhooksHealthy {
+		t.Error("proj-2: expected WebhooksHealthy false")
+	}
+}
+
+// TestSyncService_PersistsError verifies that a per-project sync failure is
+// persisted with LastSyncError set.
+func TestSyncService_PersistsError(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
+	statusRepo := newMockSyncStatusRepo()
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return nil, nil, errors.New("no credentials for project")
+		}, 5*time.Minute)
+	svc.WithSyncStatusRepository(statusRepo)
+
+	ctx := context.Background()
+	if err := svc.SyncNow(ctx); err != nil {
+		t.Fatalf("SyncNow: %v", err)
+	}
+
+	if statusRepo.upsertCount() != 1 {
+		t.Fatalf("expected 1 Upsert call, got %d", statusRepo.upsertCount())
+	}
+	persisted := statusRepo.lastUpsert()
+	if persisted.ProjectID != "proj-1" {
+		t.Errorf("got ProjectID %q, want %q", persisted.ProjectID, "proj-1")
+	}
+	if persisted.LastSyncError == "" {
+		t.Error("expected LastSyncError to be persisted for failing project")
+	}
+	if persisted.LastSyncAt == nil {
+		t.Error("expected non-nil LastSyncAt in persisted error status")
+	}
+}
+
+// TestSyncService_NoRepo_GracefulDegradation verifies the service works
+// without a SyncStatusRepository configured: sync and status queries succeed
+// and no persistence calls are attempted.
+func TestSyncService_NoRepo_GracefulDegradation(t *testing.T) {
+	ticketRepo := newMockTicketRepo()
+	prRepo := newMockPRRepo()
+	projectRepo := newMockProjectRepo()
+	mustCreateProject(t, projectRepo, model.Project{ID: "proj-1", Name: "Test Project"})
+
+	// Note: no WithSyncStatusRepository call — must degrade gracefully.
+	svc := NewSyncService(ticketRepo, prRepo, projectRepo,
+		func(projectID string) (ticket.TicketAdapter, scm.SCMAdapter, error) {
+			return &stubTicketAdapter{
+				name: "test-ticket",
+				tickets: []model.Ticket{
+					sampleTicket("proj-1", "ext-1"),
+				},
+			}, &stubSCMAdapter{name: "test-scm"}, nil
+		}, 5*time.Minute)
+
+	ctx := context.Background()
+	if err := svc.SyncNow(ctx); err != nil {
+		t.Fatalf("SyncNow without repo: %v", err)
+	}
+	status := svc.Status()
+	if status.TicketsSynced != 1 {
+		t.Errorf("got TicketsSynced %d, want 1", status.TicketsSynced)
+	}
+	ps, ok := status.Projects["proj-1"]
+	if !ok {
+		t.Fatal("expected proj-1 in status")
+	}
+	if ps.TicketsSynced != 1 {
+		t.Errorf("proj-1 TicketsSynced: got %d, want 1", ps.TicketsSynced)
+	}
+	if ps.LastSyncAt == nil {
+		t.Error("expected non-nil LastSyncAt for synced project")
+	}
+}

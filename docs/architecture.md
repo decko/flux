@@ -224,7 +224,19 @@ type PipelineRunRepository interface {
     Update(ctx context.Context, run PipelineRun) error
     // No Delete — pipeline runs are immutable records
 }
+
+type SyncStatusRepository interface {
+    Upsert(ctx context.Context, status SyncStatusRow) error
+    GetByProjectID(ctx context.Context, projectID string) (SyncStatusRow, error)
+    List(ctx context.Context) ([]SyncStatusRow, error)
+}
 ```
+
+Per-project sync status is persisted in the `sync_status` table: one row per
+project, keyed by `project_id` (primary key with `ON DELETE CASCADE` from
+`projects`). `SyncService` writes through `SyncStatusRepository` after every
+sync pass and loads the rows on startup, so per-project status (and the
+aggregate dashboard fields derived from it) survive process restarts.
 
 ## Data Flow
 

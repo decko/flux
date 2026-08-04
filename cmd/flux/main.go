@@ -407,6 +407,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	auditRepo := repository.NewSQLiteAuditRepository(sdb)
 	triggerRuleRepo := repository.NewSQLiteTriggerRuleRepository(sdb)
 	webhookSecretRepo := repository.NewSQLiteWebhookSecretRepository(sdb)
+	syncStatusRepo := repository.NewSQLiteSyncStatusRepository(sdb)
 	auditSvc := domain.NewAuditService(auditRepo)
 
 	// Build GitHub App auth (may be nil if not configured).
@@ -495,6 +496,7 @@ func setupServer(ctx context.Context, cfg *config.Config) (*api.Server, func(), 
 	}
 	syncSvc := domain.NewSyncService(ticketRepo, prRepo, projectRepo, factory, syncInterval)
 	syncSvc.WithSyncAuditService(auditSvc)
+	syncSvc.WithSyncStatusRepository(syncStatusRepo)
 
 	// Wire webhook verifier to check webhook health during sync.
 	if appAuth != nil {
