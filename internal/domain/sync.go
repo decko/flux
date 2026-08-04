@@ -59,17 +59,19 @@ type SyncService struct {
 	// Factory creates per-project adapters for sync.
 	Factory         AdapterFactory
 	webhookVerifier WebhookVerifier
+	syncStatusRepo  repository.SyncStatusRepository
 	triggerSvc      *TriggerService
 	auditSvc        *AuditService
 	interval        time.Duration
 	logger          *slog.Logger
 
-	mu      sync.Mutex
-	status  SyncStatus
-	ticker  *time.Ticker
-	cancel  context.CancelFunc
-	done    chan struct{}
-	running bool
+	mu           sync.Mutex
+	status       SyncStatus
+	statusLoaded sync.Once
+	ticker       *time.Ticker
+	cancel       context.CancelFunc
+	done         chan struct{}
+	running      bool
 }
 
 // ticketKey is a composite uniqueness key for upsert matching.
@@ -131,12 +133,74 @@ func (s *SyncService) WithWebhookVerifier(v WebhookVerifier) {
 	s.webhookVerifier = v
 }
 
+// WithSyncStatusRepository sets the repository used to persist per-project
+// sync status across restarts. When unset, status is kept in memory only.
+func (s *SyncService) WithSyncStatusRepository(repo repository.SyncStatusRepository) {
+	s.syncStatusRepo = repo
+}
+
 // Status returns the result of the last sync operation. It is safe
-// for concurrent use.
+// for concurrent use. On the first call, persisted per-project sync
+// status is loaded from the SyncStatusRepository (if configured) so
+// status survives process restarts.
 func (s *SyncService) Status() SyncStatus {
+	s.statusLoaded.Do(s.loadPersistedStatus)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.status
+}
+
+// loadPersistedStatus populates in-memory per-project status from the
+// SyncStatusRepository. It runs exactly once per service lifetime via
+// statusLoaded; when no repository is configured it is a no-op. Load
+// failures are logged and the service continues with in-memory-only status.
+func (s *SyncService) loadPersistedStatus() {
+	if s.syncStatusRepo == nil {
+		return
+	}
+	rows, err := s.syncStatusRepo.List(context.Background())
+	if err != nil {
+		s.logger.Warn("load persisted sync status failed", "err", err)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, row := range rows {
+		ps := ProjectSyncStatus{
+			ProjectID:       row.ProjectID,
+			LastSyncAt:      row.LastSyncAt,
+			LastSyncError:   row.LastSyncError,
+			TicketsSynced:   row.TicketsSynced,
+			PRsSynced:       row.PRsSynced,
+			WebhooksHealthy: row.WebhooksHealthy,
+		}
+		s.status.Projects[row.ProjectID] = ps
+	}
+}
+
+// persistSyncStatus writes the given per-project status to the
+// SyncStatusRepository when one is configured. Persistence failures are
+// logged but do not fail the sync.
+func (s *SyncService) persistSyncStatus(ctx context.Context, projectID string, ps ProjectSyncStatus, now time.Time) {
+	if s.syncStatusRepo == nil {
+		return
+	}
+	row := model.SyncStatusRow{
+		ID:              projectID,
+		ProjectID:       projectID,
+		LastSyncAt:      ps.LastSyncAt,
+		LastSyncError:   ps.LastSyncError,
+		TicketsSynced:   ps.TicketsSynced,
+		PRsSynced:       ps.PRsSynced,
+		WebhooksHealthy: ps.WebhooksHealthy,
+		UpdatedAt:       now,
+	}
+	if err := s.syncStatusRepo.Upsert(ctx, row); err != nil {
+		s.logger.Warn("persist sync status failed",
+			"project_id", projectID,
+			"err", err,
+		)
+	}
 }
 
 // Run starts the periodic sync loop. It performs an immediate sync
@@ -295,6 +359,7 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 			LastSyncError: err.Error(),
 		}
 		s.status.Projects[projectID] = ps
+		s.persistSyncStatus(ctx, projectID, ps, now)
 		s.status.LastSyncAt = &now
 		s.status.LastSyncError = err.Error()
 		s.status.TicketsSynced = 0
@@ -435,6 +500,7 @@ func (s *SyncService) syncOnce(ctx context.Context, projectID string) error {
 		ps.LastSyncError = lastErr.Error()
 	}
 	s.status.Projects[projectID] = ps
+	s.persistSyncStatus(ctx, projectID, ps, now)
 	s.status.LastSyncAt = &now
 	if lastErr != nil {
 		s.status.LastSyncError = lastErr.Error()

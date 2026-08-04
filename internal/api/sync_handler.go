@@ -21,13 +21,24 @@ type syncService interface {
 	SyncProject(ctx context.Context, projectID string) error
 }
 
-// syncStatusResponse is the JSON body for GET /api/v1/sync/status.
-type syncStatusResponse struct {
+// projectSyncStatusResponse is the JSON body for a single project's sync status.
+type projectSyncStatusResponse struct {
+	ProjectID       string     `json:"project_id"`
 	LastSyncAt      *time.Time `json:"last_sync_at"`
 	LastSyncError   string     `json:"last_sync_error"`
 	TicketsSynced   int        `json:"tickets_synced"`
 	PRsSynced       int        `json:"prs_synced"`
 	WebhooksHealthy bool       `json:"webhooks_healthy"`
+}
+
+// syncStatusResponse is the JSON body for GET /api/v1/sync/status.
+type syncStatusResponse struct {
+	LastSyncAt      *time.Time                           `json:"last_sync_at"`
+	LastSyncError   string                               `json:"last_sync_error"`
+	TicketsSynced   int                                  `json:"tickets_synced"`
+	PRsSynced       int                                  `json:"prs_synced"`
+	WebhooksHealthy bool                                 `json:"webhooks_healthy"`
+	Projects        map[string]projectSyncStatusResponse `json:"projects"`
 }
 
 func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
@@ -42,13 +53,28 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 		TicketsSynced:   status.TicketsSynced,
 		PRsSynced:       status.PRsSynced,
 		WebhooksHealthy: status.WebhooksHealthy,
+		Projects:        make(map[string]projectSyncStatusResponse, len(status.Projects)),
 	}
 	// Only admins see error details (may contain upstream URLs, auth failures).
-	if authctx.Role(r.Context()) == "admin" {
+	isAdmin := authctx.Role(r.Context()) == "admin"
+	if isAdmin {
 		resp.LastSyncError = status.LastSyncError
 	}
 	if status.LastSyncAt != nil {
 		resp.LastSyncAt = status.LastSyncAt
+	}
+	for projectID, ps := range status.Projects {
+		p := projectSyncStatusResponse{
+			ProjectID:       ps.ProjectID,
+			LastSyncAt:      ps.LastSyncAt,
+			TicketsSynced:   ps.TicketsSynced,
+			PRsSynced:       ps.PRsSynced,
+			WebhooksHealthy: ps.WebhooksHealthy,
+		}
+		if isAdmin {
+			p.LastSyncError = ps.LastSyncError
+		}
+		resp.Projects[projectID] = p
 	}
 
 	w.Header().Set("Content-Type", "application/json")

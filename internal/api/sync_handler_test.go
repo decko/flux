@@ -18,6 +18,7 @@ type mockSyncService struct {
 	lastSyncError string
 	ticketsSynced int
 	prsSynced     int
+	projects      map[string]domain.ProjectSyncStatus
 }
 
 func (s *mockSyncService) Status() domain.SyncStatus {
@@ -29,6 +30,7 @@ func (s *mockSyncService) Status() domain.SyncStatus {
 		TicketsSynced:   s.ticketsSynced,
 		PRsSynced:       s.prsSynced,
 		WebhooksHealthy: true,
+		Projects:        s.projects,
 	}
 }
 
@@ -286,5 +288,140 @@ func TestHandleSyncTrigger_Forbidden(t *testing.T) {
 
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+// ─── Per-Project Sync Status (#284) ────────────────────────────────────────
+
+// TestSyncStatus_IncludesPerProjectData verifies GET /api/v1/sync/status
+// includes per-project data under the "projects" key.
+func TestSyncStatus_IncludesPerProjectData(t *testing.T) {
+	srv, svc := setupSyncServer(t)
+	now := time.Now().UTC()
+	svc.projects = map[string]domain.ProjectSyncStatus{
+		"proj-1": {
+			ProjectID:       "proj-1",
+			LastSyncAt:      &now,
+			LastSyncError:   "",
+			TicketsSynced:   2,
+			PRsSynced:       1,
+			WebhooksHealthy: true,
+		},
+		"proj-2": {
+			ProjectID:       "proj-2",
+			LastSyncAt:      &now,
+			LastSyncError:   "ticket API error",
+			TicketsSynced:   0,
+			PRsSynced:       0,
+			WebhooksHealthy: false,
+		},
+	}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	req := authedRequest(http.MethodGet, ts.URL+"/api/v1/sync/status", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/sync/status: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var status syncStatusResponse
+	mustDecode(t, resp, &status)
+
+	if len(status.Projects) != 2 {
+		t.Fatalf("got %d projects, want 2", len(status.Projects))
+	}
+
+	p1, ok := status.Projects["proj-1"]
+	if !ok {
+		t.Fatal("expected proj-1 in projects")
+	}
+	if p1.TicketsSynced != 2 {
+		t.Errorf("proj-1 tickets_synced: got %d, want 2", p1.TicketsSynced)
+	}
+	if p1.PRsSynced != 1 {
+		t.Errorf("proj-1 prs_synced: got %d, want 1", p1.PRsSynced)
+	}
+	if p1.LastSyncAt == nil {
+		t.Error("proj-1: expected non-nil last_sync_at")
+	}
+	if !p1.WebhooksHealthy {
+		t.Error("proj-1: expected webhooks_healthy true")
+	}
+
+	p2, ok := status.Projects["proj-2"]
+	if !ok {
+		t.Fatal("expected proj-2 in projects")
+	}
+	if p2.TicketsSynced != 0 {
+		t.Errorf("proj-2 tickets_synced: got %d, want 0", p2.TicketsSynced)
+	}
+	if p2.PRsSynced != 0 {
+		t.Errorf("proj-2 prs_synced: got %d, want 0", p2.PRsSynced)
+	}
+	if p2.WebhooksHealthy {
+		t.Error("proj-2: expected webhooks_healthy false")
+	}
+}
+
+// TestSyncStatus_PerProjectErrorAdminOnly verifies per-project last_sync_error
+// is only revealed to admins, mirroring the aggregate error field behavior.
+func TestSyncStatus_PerProjectErrorAdminOnly(t *testing.T) {
+	srv, svc := setupSyncServer(t)
+	now := time.Now().UTC()
+	secretErr := "ticket API unavailable"
+	svc.projects = map[string]domain.ProjectSyncStatus{
+		"proj-1": {
+			ProjectID:       "proj-1",
+			LastSyncAt:      &now,
+			LastSyncError:   secretErr,
+			TicketsSynced:   0,
+			PRsSynced:       0,
+			WebhooksHealthy: true,
+		},
+	}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Non-admin: per-project error must be blanked out.
+	req := nonAdminRequest(http.MethodGet, ts.URL+"/api/v1/sync/status", "")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/sync/status (non-admin): %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("got status %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var nonAdminStatus syncStatusResponse
+	mustDecode(t, resp, &nonAdminStatus)
+	_ = resp.Body.Close()
+	p1, ok := nonAdminStatus.Projects["proj-1"]
+	if !ok {
+		t.Fatal("expected proj-1 in non-admin response")
+	}
+	if p1.LastSyncError != "" {
+		t.Errorf("non-admin got last_sync_error %q, want ''", p1.LastSyncError)
+	}
+
+	// Admin: per-project error must be visible.
+	req = authedRequest(http.MethodGet, ts.URL+"/api/v1/sync/status", nil)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /api/v1/sync/status (admin): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var adminStatus syncStatusResponse
+	mustDecode(t, resp, &adminStatus)
+	p1, ok = adminStatus.Projects["proj-1"]
+	if !ok {
+		t.Fatal("expected proj-1 in admin response")
+	}
+	if p1.LastSyncError != secretErr {
+		t.Errorf("admin got last_sync_error %q, want %q", p1.LastSyncError, secretErr)
 	}
 }
