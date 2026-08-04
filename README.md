@@ -9,7 +9,7 @@ Flux provides visibility and orchestration for teams using AI agents to develop 
 **Features (M1):**
 
 - **Projects** — Create and manage software projects with adapters and pipelines
-- **Tickets** — View and filter tickets with pagination (GitHub, Jira, Linear)
+- **Tickets** — View and filter tickets with pagination (GitHub)
 - **Pull Requests** — Track PRs linked to tickets
 - **Pipeline Runs** — Trigger and monitor agentic pipeline executions
 - **REST API** — Full CRUD with JWT authentication, pagination, and filtering
@@ -199,8 +199,8 @@ make build
 ┌─────────────┐              │
 │  Go Binary   │    ┌────────▼─────────┐
 │              │    │  Adapters        │
-│  ┌────────┐  │    │  (GitHub, Jira)  │
-│  │ Chi API │◄─┼────┤  (future)       │
+│  ┌────────┐  │    │  (GitHub)       │
+│  │ Chi API │◄─┼────┤  (future: Jira, │
 │  ├────────┤  │    └──────────────────┘
 │  │Domain  │  │
 │  ├────────┤  │    ┌──────────────────┐
