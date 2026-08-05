@@ -18,33 +18,37 @@ Flux is a web-based control plane for agentic software development lifecycle. It
 │                        Flux Core                             │
 │                     (Go / Chi / SQLite)                       │
 ├─────────────────────────────────────────────────────────────┤
-│  API Layer (REST + WebSocket)                                │
-│  ├── Projects    ├── Tickets    ├── Pipelines               │
-│  ├── PRs         ├── Users      ├── Agent Runs              │
+│  API Layer (REST)                                            │
+│  ├── Projects    ├── Tickets    ├── Pipeline Runs           │
+│  ├── PRs         ├── Users      ├── Sync/Webhooks/Audit     │
 ├─────────────────────────────────────────────────────────────┤
 │  Domain Layer                                                │
 │  ├── Project Service     ├── Ticket Service                 │
-│  ├── Pipeline Service    ├── Agent Service                  │
+│  ├── Pipeline Service    ├── Sync Service                   │
+│  ├── Trigger Service     ├── Audit Service                  │
 ├─────────────────────────────────────────────────────────────┤
 │  Adapter Layer                                               │
-│  ├── Ticket Adapters (GitHub, Jira, Linear)                 │
-│  ├── SCM Adapters (GitHub, GitLab)                          │
-│  ├── Orchestrator Adapters (soda, custom)                   │
-│  └── Agent Workers (JSON-RPC, local/remote)                 │
+│  ├── Ticket Adapters (GitHub)                               │
+│  ├── SCM Adapters (GitHub)                                  │
+│  └── Orchestrator Adapters (soda)                           │
 ├─────────────────────────────────────────────────────────────┤
 │  Infrastructure                                              │
-│  ├── Repository (SQLite → PostgreSQL)                        │
-│  ├── Event Bus (in-process → NATS/Redis)                     │
-│  └── MCP Server (agent write-back)                           │
+│  └── Repository (SQLite → PostgreSQL)                        │
 └─────────────────────────────────────────────────────────────┘
          │                                    │
          ▼                                    ▼
 ┌─────────────────┐              ┌─────────────────────────┐
 │   Frontend SPA  │              │    External Services    │
-│  (Vite + TS +   │              │  GitHub │ Jira │ soda   │
+│  (Vite + TS +   │              │  GitHub │ soda          │
 │   TanStack)     │              └─────────────────────────┘
 └─────────────────┘
 ```
+
+> **Planned (not yet implemented):** WebSocket live updates, Event Bus
+> (in-process → NATS/Redis), MCP Server (agent write-back), Agent Workers
+> (JSON-RPC, local/remote), and additional adapters (Jira, Linear, GitLab,
+> custom orchestrators). These appear in the Future Considerations section;
+> do not design integrations against them until implemented.
 
 ## Core Concepts
 
@@ -175,9 +179,9 @@ type OrchestratorAdapter interface {
 }
 ```
 
-### Agent worker
+### Agent worker (planned)
 
-Executes agent tasks (planner, coder, reviewer, QE).
+Executes agent tasks (planner, coder, reviewer, QE). **Not yet implemented** — no agent worker code exists; the interface below is the intended contract.
 
 ```go
 type AgentWorker interface {
@@ -245,12 +249,7 @@ aggregate dashboard fields derived from it) survive process restarts.
 ```
 [GitHub] --webhook/poll--> [TicketAdapter] ──┐
                                               ├──> [SyncService] --> [Repository] --> [DB]
-[GitHub] --webhook/poll--> [SCMAdapter] ──────┘                              |
-                                                                              v
-                                                                       [Event Bus]
-                                                                              |
-                                                                              v
-                                                                       [WebSocket] --> [Frontend]
+[GitHub] --webhook/poll--> [SCMAdapter] ─────┘
 ```
 
 SyncService periodically polls both adapters and upserts tickets and pull
@@ -261,21 +260,17 @@ one-shot (SyncNow) synchronization with error isolation between adapters.
 
 ```
 [Frontend] --trigger--> [API] --> [PipelineService] --> [OrchestratorAdapter] --> [soda]
-                                   |                                                  |
-                                   v                                                  v
-                              [Repository] <--status/callback------------------ [Agent Worker]
-                                   |
-                                   v
-                              [Event Bus] --> [WebSocket] --> [Frontend]
+                                     |                                                   ^
+                                     v                                                   |
+                               [Repository] <------ status polling -----------------------
 ```
 
-### Agent write-back (MCP)
+### Agent write-back (MCP) — planned
+
+**Not yet implemented.** Intended flow when the MCP server ships:
 
 ```
 [Agent] --MCP--> [MCP Server] --> [Flux API] --> [Repository]
-                                      |
-                                      v
-                                 [Event Bus] --> [Frontend]
 ```
 
 ## MVP Scope (Self-Host Milestone)
@@ -318,7 +313,7 @@ Flux manages its own development.
 |-------|--------|-----------|
 | Backend | Go + Chi | Lightweight, stdlib-compatible |
 | Database | SQLite (→ PostgreSQL) | Simple start, adapter for migration |
-| API | REST + WebSocket | Standard, real-time updates |
+| API | REST | Standard, real-time updates via polling (WebSocket planned) |
 | Frontend | Vite + TypeScript + TanStack Router/Query | SPA, embeddable in Go binary |
 | Orchestrator | soda (pluggable) | Existing tool, JSON-RPC interface |
 | Auth | JWT | Stateless, simple |
@@ -334,12 +329,12 @@ flux/
 │   ├── domain/            # Business logic services
 │   ├── model/             # Domain types (Project, Ticket, etc.)
 │   ├── adapter/
-│   │   ├── ticket/        # GitHub, Jira adapters
-│   │   ├── scm/           # SCM adapters (GitHub, GitLab)
+│   │   ├── ticket/        # GitHub adapter (Jira/Linear planned)
+│   │   ├── scm/           # SCM adapters (GitHub)
 │   │   └── orchestrator/  # soda adapter
 │   ├── repository/        # SQLite implementations
-│   ├── agent/             # Agent worker client/server
-│   ├── mcp/               # MCP server for write-back
+│   ├── agent/             # Agent worker client/server (planned)
+│   ├── mcp/               # MCP server for write-back (planned)
 │   └── config/            # Configuration loading
 ├── pkg/                   # Public packages (if needed)
 ├── web/                   # Frontend SPA source
@@ -391,6 +386,13 @@ sync:
 
 ## Future Considerations
 
+Planned components (not yet implemented — see System Architecture note):
+
+- **WebSocket live updates**: Push ticket/PR/run changes to the frontend
+- **Event Bus**: In-process pub/sub, later NATS/Redis for multi-node
+- **MCP Server**: Agent write-back to the flux API
+- **Agent Workers**: JSON-RPC client/server for planner, coder, reviewer, QE
+- **Additional adapters**: Jira, Linear (tickets); GitLab (SCM); custom orchestrators
 - **Event sourcing**: For audit trail and replay
 - **Plugin system**: For custom adapters without recompiling
 - **Metrics**: Prometheus endpoints
